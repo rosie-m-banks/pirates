@@ -52,7 +52,8 @@ describe('letterCounts and findFormableWords', () => {
 describe('findOneConstruction', () => {
   it('returns word + letters construction when valid', () => {
     const pool = letterCounts('cator'); // cat + or
-    const construction = findOneConstruction('actor', ['cat'], pool);
+    const available = letterCounts('or');
+    const construction = findOneConstruction('actor', ['cat'], pool, available);
     assert.ok(construction);
     assert.strictEqual(construction.length, 3); // cat, o, r
     assert.ok(construction.includes('cat'));
@@ -62,7 +63,7 @@ describe('findOneConstruction', () => {
 
   it('returns letters-only construction (≥2 blocks)', () => {
     const pool = letterCounts('cab');
-    const construction = findOneConstruction('cab', [], pool);
+    const construction = findOneConstruction('cab', [], pool, pool);
     assert.ok(construction);
     assert.strictEqual(construction.length, 3);
     assert.deepStrictEqual([...construction].sort(), ['a', 'b', 'c']);
@@ -70,16 +71,29 @@ describe('findOneConstruction', () => {
 
   it('returns null for single-word anagram (no addition)', () => {
     const pool = letterCounts('cat'); // only word "cat", no extra letters
-    const construction = findOneConstruction('act', ['cat'], pool);
+    const available = letterCounts('');
+    const construction = findOneConstruction('act', ['cat'], pool, available);
     assert.strictEqual(construction, null);
   });
 
   it('uses full word when building (e.g. cat + r -> cart)', () => {
     const pool = letterCounts('catr');
-    const construction = findOneConstruction('cart', ['cat'], pool);
+    const available = letterCounts('r');
+    const construction = findOneConstruction('cart', ['cat'], pool, available);
     assert.ok(construction);
     assert.ok(construction.includes('cat'));
     assert.ok(construction.includes('r'));
+  });
+
+  it('returns null when remainder would require splitting existing words (only available letters count)', () => {
+    // "aboard" needs a,a,b,o,r,d. Pool = boat + cat + or = a,b,o,a,t,c,a,t,o,r. So we have the letters.
+    // But remainder must come from AVAILABLE only ("or"). No subset of {boat, cat} leaves remainder formable from "or".
+    // boat -> remainder for "aboard" would be a,a,r,d (not formable from "or"). cat -> a,b,o,o,r,d (not from "or").
+    // So findOneConstruction should return null for "aboard" with player words ["boat","cat"] and available "or".
+    const pool = letterCounts('boatcator');
+    const available = letterCounts('or');
+    const construction = findOneConstruction('aboard', ['boat', 'cat'], pool, available);
+    assert.strictEqual(construction, null);
   });
 });
 
@@ -157,6 +171,18 @@ describe('processGameState output format', () => {
       ['xyz']
     );
     assert.strictEqual(result.availableLetters, 'xyz');
+  });
+
+  it('does NOT recommend words that would require splitting letters from existing words (only free letters)', () => {
+    // Free letters are only "or". "aboard" would need a,a,b,o,r,d — we must not build it from a,a,b,d from "boat"/"cat".
+    const result = processGameState(
+      { players: [{ words: ['cat', 'boat'] }], availableLetters: 'or' },
+      ['aboard', 'actor', 'boat', 'cat', 'or']
+    );
+    assert.ok(!('aboard' in result.recommended_words), 'aboard must not be recommended when only or are free');
+    // actor = cat + o + r is valid (remainder or from available)
+    assert.ok('actor' in result.recommended_words);
+    assert.deepStrictEqual(result.recommended_words['actor'].sort(), ['cat', 'o', 'r'].sort());
   });
 });
 

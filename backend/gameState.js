@@ -72,14 +72,17 @@ export function countsToString(counts) {
 /**
  * Find one valid construction for target word: list of full player words + single letters.
  * Rules: (1) only additive — at least 2 blocks; (2) when using a word, use all its letters;
- * (3) letters-only construction that is an anagram of a single player word is invalid.
+ * (3) letters-only construction that is an anagram of a single player word is invalid;
+ * (4) remainder (letters not from chosen words) must be formable from available letters ONLY
+ *     (we never split letters from existing words — only loose tiles count as "available").
  * Prefer constructions that use more player words (more informative).
  * @param {string} target
  * @param {string[]} playerWordsUnique
- * @param {Record<string, number>} poolCounts full pool (player words + available letters)
+ * @param {Record<string, number>} poolCounts full pool (for checking target is formable overall)
+ * @param {Record<string, number>} availableCounts only loose/free letters (remainder must come from here)
  * @returns {string[] | null}
  */
-export function findOneConstruction(target, playerWordsUnique, poolCounts) {
+export function findOneConstruction(target, playerWordsUnique, poolCounts, availableCounts) {
   const targetCounts = letterCounts(target);
   const minBlocks = 2;
   const n = playerWordsUnique.length;
@@ -117,8 +120,8 @@ export function findOneConstruction(target, playerWordsUnique, poolCounts) {
 
     const remainderCounts = subtractCounts(targetCounts, fromWordsCounts);
     const remainderStr = countsToString(remainderCounts);
-    const poolAfterWords = subtractCounts(poolCounts, fromWordsCounts);
-    if (!canForm(poolAfterWords, remainderStr)) continue;
+    // Remainder must be formable from AVAILABLE (loose) letters only — never split existing words
+    if (!canForm(availableCounts, remainderStr)) continue;
 
     const numBlocks = wordsUsed.length + remainderStr.length;
     if (numBlocks < minBlocks) continue;
@@ -169,7 +172,8 @@ export function processGameState(payload, dict) {
   const players = wordsPerPlayer.map((words) => ({ words: [...words] }));
   const recommended_words = {};
 
-  const poolCounts = { ...letterCounts(availableLetters) };
+  const availableCounts = letterCounts(availableLetters);
+  const poolCounts = { ...availableCounts };
   const allPlayerWords = [];
   wordsPerPlayer.flat().forEach((w) => {
     const normalized = String(w).toLowerCase().replace(/[^a-z]/g, '');
@@ -185,7 +189,7 @@ export function processGameState(payload, dict) {
   const formable = findFormableWords(poolCounts, dict, MIN_WORD_LENGTH);
 
   for (const word of formable) {
-    const construction = findOneConstruction(word, playerWordsUnique, poolCounts);
+    const construction = findOneConstruction(word, playerWordsUnique, poolCounts, availableCounts);
     if (construction) recommended_words[word] = construction;
   }
 
