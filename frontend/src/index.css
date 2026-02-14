@@ -1,1 +1,35 @@
+@import url("https://fonts.googleapis.com/css2?family=Silkscreen:wght@400;700&display=swap");
 @import "tailwindcss";
+
+@font-face {
+    font-family: "FatPix";
+    src:
+        url("./assets/fonts/FatPix-SVG.otf") format("opentype"),
+        url("./assets/fonts/FatPix-SVG.ttf") format("truetype");
+    font-weight: normal;
+    font-style: normal;
+}
+
+:root {
+    --sand-yellow: #f4d47c;
+    --sand-dark: #d4b55c;
+    --ocean-blue: #5ba3d0;
+    --ocean-dark: #3d7fa8;
+    --wave-color: #2d5f7f;
+    --scroll-tan: #e8d5b7;
+    --scroll-dark: #c8b597;
+}
+
+* {
+    image-rendering: pixelated;
+    image-rendering: -moz-crisp-edges;
+    image-rendering: crisp-edges;
+}
+
+body {
+    margin: 0;
+    padding: 0;
+    font-family: "Silkscreen", monospace;
+    background: var(--ocean-blue);
+    overflow-x: hidden;
+}
