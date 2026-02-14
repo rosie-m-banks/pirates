@@ -8,27 +8,30 @@ import { parentPort } from 'worker_threads';
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
-import { processGameState } from './gameState.js';
+import { processGameState, letterCounts } from './gameState.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-/** In-memory word list (lazy-loaded from data/words.txt). @type {string[]} */
-let dictionary = [];
+/** @type {{ words: string[], counts: Record<string, number>[] }} */
+let dictionaryCache = null;
 
-/** Load dictionary from data/words.txt. Uses fallback if file missing. */
+/** Load dictionary and precompute letter counts once. O(D*L) at load; then O(1) lookup per word. */
 function loadDictionary() {
-  if (dictionary.length > 0) return dictionary;
+  if (dictionaryCache) return dictionaryCache;
+  let words = [];
   try {
     const path = join(__dirname, 'data', 'words.txt');
     const text = readFileSync(path, 'utf8');
-    dictionary = text
+    words = text
       .split(/\r?\n/)
       .map((w) => w.trim().toLowerCase())
       .filter((w) => /^[a-z]{2,}$/.test(w));
   } catch {
-    dictionary = getFallbackWords();
+    words = getFallbackWords();
   }
-  return dictionary;
+  const counts = words.map((w) => letterCounts(w));
+  dictionaryCache = { words, counts };
+  return dictionaryCache;
 }
 
 /** Minimal fallback when data/words.txt is missing */
@@ -58,7 +61,8 @@ parentPort.on('message', (msg) => {
     const { kind, payload } = msg;
     let result;
     if (kind === 'game-state') {
-      result = processGameState(payload, loadDictionary());
+      const { words, counts } = loadDictionary();
+      result = processGameState(payload, words, counts);
     } else if (kind === 'image') {
       result = processImageUpdate(payload);
     } else {

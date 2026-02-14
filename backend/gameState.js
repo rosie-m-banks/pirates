@@ -3,9 +3,9 @@
  * with valid constructions (full words + letters, ≥2 blocks, word length ≥3).
  * Used by worker.js and tests.
  *
- * Performance: single dict pass; no formable list/sort; mask loop high→low (no sort);
- * canFormFromCounts/countsEqual avoid string allocs; letters-only fast path; precomputed
- * playerWordCounts; first-letter quick reject; remainderStr built only on return.
+ * Big O (per request): O(D) formability + O(2^min(n,K)) precompute + O(F·2^min(n,K)) constructions
+ * (D=dict size, F=formable words, n=player words, K=16). Precomputed dict counts and subset
+ * counts remove O(L) and O(n) from inner loops; cap n so 2^n is constant.
  */
 
 /**
@@ -71,6 +71,20 @@ export function findFormableWords(availableCounts, dict, minLength = 1) {
 }
 
 /**
+ * Add two letter-count objects (merge multisets).
+ * @param {Record<string, number>} a
+ * @param {Record<string, number>} b
+ * @returns {Record<string, number>}
+ */
+function mergeCounts(a, b) {
+  const out = { ...a };
+  for (const ch of Object.keys(b || {})) {
+    out[ch] = (out[ch] || 0) + b[ch];
+  }
+  return out;
+}
+
+/**
  * Subtract letter counts: a - b (per letter, min 0).
  * @param {Record<string, number>} a
  * @param {Record<string, number>} b
@@ -98,59 +112,74 @@ export function countsToString(counts) {
 
 /**
  * Find one valid construction for target word: list of full player words + single letters.
- * Rules: (1) only additive — at least 2 blocks; (2) when using a word, use all its letters;
- * (3) letters-only construction that is an anagram of a single player word is invalid;
- * (4) remainder (letters not from chosen words) must be formable from available letters ONLY.
- * Prefer constructions that use more player words (iterate mask high→low = more bits first).
+ * When subsetCounts/subsetWords are provided (from precomputeSubsets), inner loop is O(1) per mask
+ * instead of O(n). When targetCounts is provided, skips letterCounts(target).
  * @param {string} target
  * @param {string[]} playerWordsUnique
- * @param {Record<string, number>} poolCounts full pool (for checking target is formable overall)
- * @param {Record<string, number>} availableCounts only loose/free letters (remainder must come from here)
- * @param {Record<string, number>[]} playerWordCounts precomputed letterCounts for each player word (optional; computed if not provided)
+ * @param {Record<string, number>} poolCounts
+ * @param {Record<string, number>} availableCounts
+ * @param {Record<string, number>[]} [playerWordCounts]
+ * @param {Record<string, number>} [targetCounts] precomputed letterCounts(target)
+ * @param {Record<string, number>[]} [subsetCounts] precomputed counts per mask, length 2^n
+ * @param {string[][]} [subsetWords] precomputed words per mask, length 2^n
  * @returns {string[] | null}
  */
-export function findOneConstruction(target, playerWordsUnique, poolCounts, availableCounts, playerWordCounts = null) {
-  const targetCounts = letterCounts(target);
+export function findOneConstruction(
+  target,
+  playerWordsUnique,
+  poolCounts,
+  availableCounts,
+  playerWordCounts = null,
+  targetCounts = null,
+  subsetCounts = null,
+  subsetWords = null
+) {
+  const targetCountsResolved = targetCounts ?? letterCounts(target);
   const minBlocks = 2;
   const n = playerWordsUnique.length;
   const wordCounts = playerWordCounts ?? playerWordsUnique.map((w) => letterCounts(w));
 
-  // Fast path: letters-only (mask 0). Avoids 2^n loop when word is buildable from available only.
-  if (canFormFromCounts(availableCounts, targetCounts)) {
-    const remainderLen = Object.values(targetCounts).reduce((s, x) => s + x, 0);
+  if (canFormFromCounts(availableCounts, targetCountsResolved)) {
+    const remainderLen = Object.values(targetCountsResolved).reduce((s, x) => s + x, 0);
     if (remainderLen >= minBlocks) {
-      const isAnagramOfOneWord = n > 0 && wordCounts.some((wc) => countsEqual(targetCounts, wc));
+      const isAnagramOfOneWord = n > 0 && wordCounts.some((wc) => countsEqual(targetCountsResolved, wc));
       if (!isAnagramOfOneWord) {
-        const remainderStr = countsToString(targetCounts);
+        const remainderStr = countsToString(targetCountsResolved);
         return [...remainderStr.split('')];
       }
     }
   }
 
-  for (let mask = (1 << n) - 1; mask >= 0; mask--) {
-    let fromWordsCounts = {};
-    const wordsUsed = [];
-    for (let i = 0; i < n; i++) {
-      if (!(mask & (1 << i))) continue;
-      const wc = wordCounts[i];
-      for (const ch of Object.keys(wc)) {
-        fromWordsCounts[ch] = (fromWordsCounts[ch] || 0) + wc[ch];
+  const numMasks = subsetCounts ? subsetCounts.length : 1 << n;
+  for (let mask = numMasks - 1; mask >= 0; mask--) {
+    const fromWordsCounts = subsetCounts ? subsetCounts[mask] : (() => {
+      const c = {};
+      for (let i = 0; i < n; i++) {
+        if (!(mask & (1 << i))) continue;
+        const wc = wordCounts[i];
+        for (const ch of Object.keys(wc)) c[ch] = (c[ch] || 0) + wc[ch];
       }
-      wordsUsed.push(playerWordsUnique[i]);
-    }
+      return c;
+    })();
+    const wordsUsed = subsetWords ? subsetWords[mask] : (() => {
+      const w = [];
+      for (let i = 0; i < n; i++) if (mask & (1 << i)) w.push(playerWordsUnique[i]);
+      return w;
+    })();
+
     let valid = true;
     for (const ch of Object.keys(fromWordsCounts)) {
-      if ((targetCounts[ch] || 0) < fromWordsCounts[ch]) {
+      if ((targetCountsResolved[ch] || 0) < fromWordsCounts[ch]) {
         valid = false;
         break;
       }
     }
     if (!valid) continue;
 
-    const remainderCounts = subtractCounts(targetCounts, fromWordsCounts);
+    const remainderCounts = subtractCounts(targetCountsResolved, fromWordsCounts);
     if (!canFormFromCounts(availableCounts, remainderCounts)) continue;
 
-    const remainderLen = Object.values(remainderCounts).reduce((s, n) => s + n, 0);
+    const remainderLen = Object.values(remainderCounts).reduce((s, x) => s + x, 0);
     const numBlocks = wordsUsed.length + remainderLen;
     if (numBlocks < minBlocks) continue;
 
@@ -163,6 +192,36 @@ export function findOneConstruction(target, playerWordsUnique, poolCounts, avail
     return [...wordsUsed, ...remainderStr.split('')];
   }
   return null;
+}
+
+/**
+ * Precompute subset letter counts and words for masks 0..2^n-1. Caps n at MAX_PLAYER_WORDS_FOR_SUBSETS.
+ * Returns { subsetCounts, subsetWords, playerWordsUnique, playerWordCounts } (possibly truncated).
+ * O(2^n * n) once per game state; then findOneConstruction is O(2^n) per word with O(1) per mask.
+ */
+function precomputeSubsets(playerWordsUnique, playerWordCounts) {
+  const cap = Math.min(playerWordsUnique.length, MAX_PLAYER_WORDS_FOR_SUBSETS);
+  const byLen = playerWordsUnique
+    .map((w, i) => ({ w, i }))
+    .sort((a, b) => b.w.length - a.w.length);
+  const truncated = byLen.slice(0, cap).map((x) => x.w);
+  const truncatedCounts = byLen.slice(0, cap).map((x) => playerWordCounts[x.i]);
+  const n = truncated.length;
+  const numMasks = 1 << n;
+  const subsetCounts = [];
+  const subsetWords = [];
+  for (let mask = 0; mask < numMasks; mask++) {
+    let c = {};
+    const words = [];
+    for (let i = 0; i < n; i++) {
+      if (!(mask & (1 << i))) continue;
+      c = mergeCounts(c, truncatedCounts[i]);
+      words.push(truncated[i]);
+    }
+    subsetCounts[mask] = c;
+    subsetWords[mask] = words;
+  }
+  return { subsetCounts, subsetWords, playerWordsUnique: truncated, playerWordCounts: truncatedCounts, n };
 }
 
 /**
@@ -181,12 +240,18 @@ export function normalizeGameData(payload) {
 
 export const MIN_WORD_LENGTH = 3;
 
+/** Max player words used for subset enumeration (caps 2^n for O(1) subset count per game). */
+const MAX_PLAYER_WORDS_FOR_SUBSETS = 16;
+
 /**
  * Process game state. Returns { players, recommended_words, availableLetters }.
+ * Big O: O(D) formability + O(2^min(n,K)) precompute + O(F * 2^min(n,K)) constructions,
+ * with K=MAX_PLAYER_WORDS_FOR_SUBSETS. Use dictCounts when available for O(1) formability per word.
  * @param {object} payload
- * @param {string[]} dict - dictionary (required; pass from loader in worker)
+ * @param {string[]} dict - dictionary (required)
+ * @param {Record<string, number>[]} [dictCounts] - precomputed letterCounts for each dict[i]; if provided, formability is O(1) per word
  */
-export function processGameState(payload, dict) {
+export function processGameState(payload, dict, dictCounts = null) {
   const { wordsPerPlayer, availableLetters } = normalizeGameData(payload);
 
   const players = wordsPerPlayer.map((words) => ({ words: [...words] }));
@@ -205,15 +270,31 @@ export function processGameState(payload, dict) {
     }
   });
 
-  const playerWordsUnique = [...new Set(allPlayerWords)];
+  const playerWordsUniqueFull = [...new Set(allPlayerWords)];
+  const playerWordCountsFull = playerWordsUniqueFull.map((w) => letterCounts(w));
   const totalPool = Object.values(poolCounts).reduce((s, n) => s + n, 0);
-  const playerWordCounts = playerWordsUnique.map((w) => letterCounts(w));
 
-  for (const word of dict) {
+  const { subsetCounts, subsetWords, playerWordsUnique, playerWordCounts } = precomputeSubsets(
+    playerWordsUniqueFull,
+    playerWordCountsFull
+  );
+
+  for (let i = 0; i < dict.length; i++) {
+    const word = dict[i];
     if (word.length < MIN_WORD_LENGTH || word.length > totalPool) continue;
     if (!poolCounts[word[0]]) continue;
-    if (!canForm(poolCounts, word)) continue;
-    const construction = findOneConstruction(word, playerWordsUnique, poolCounts, availableCounts, playerWordCounts);
+    const wc = dictCounts ? dictCounts[i] : letterCounts(word);
+    if (!canFormFromCounts(poolCounts, wc)) continue;
+    const construction = findOneConstruction(
+      word,
+      playerWordsUnique,
+      poolCounts,
+      availableCounts,
+      playerWordCounts,
+      wc,
+      subsetCounts,
+      subsetWords
+    );
     if (construction) recommended_words[word] = construction;
   }
 
