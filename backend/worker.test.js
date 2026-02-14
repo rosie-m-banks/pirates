@@ -104,18 +104,20 @@ describe('findOneConstruction', () => {
 });
 
 describe('processGameState output format', () => {
-  it('returns players, recommended_words, availableLetters', () => {
+  it('returns players, recommended_words, lettersToSteal, availableLetters', () => {
     const result = processGameState(
       { players: [{ words: ['cat'] }], availableLetters: 'or' },
       SMALL_DICT
     );
     assert.ok('players' in result);
     assert.ok('recommended_words' in result);
+    assert.ok('lettersToSteal' in result);
     assert.ok('availableLetters' in result);
     assert.strictEqual(typeof result.availableLetters, 'string');
     assert.strictEqual(Array.isArray(result.players), true);
     assert.strictEqual(typeof result.recommended_words, 'object');
     assert.strictEqual(Array.isArray(result.recommended_words), false);
+    assert.strictEqual(typeof result.lettersToSteal, 'object');
   });
 
   it('players echo input structure', () => {
@@ -161,6 +163,7 @@ describe('processGameState output format', () => {
     assert.ok(construction.includes('cat'));
     assert.ok(construction.includes('o'));
     assert.ok(construction.includes('r'));
+    assert.strictEqual(result.lettersToSteal['actor'], 2, 'actor needs 2 letters (o, r) to steal');
   });
 
   it('act is NOT recommended when only cat is on board (anagram, no addition)', () => {
@@ -215,7 +218,7 @@ describe('processGameState output format', () => {
 });
 
 describe('worker integration (run worker with game-state)', () => {
-  it('worker returns same shape: players, recommended_words, availableLetters', async () => {
+  it('worker returns same shape: players, recommended_words, lettersToSteal, availableLetters', async () => {
     const { Worker } = await import('worker_threads');
     const { fileURLToPath } = await import('url');
     const { dirname, join } = await import('path');
@@ -238,6 +241,7 @@ describe('worker integration (run worker with game-state)', () => {
 
     assert.ok('players' in result);
     assert.ok('recommended_words' in result);
+    assert.ok('lettersToSteal' in result);
     assert.ok('availableLetters' in result);
     assert.strictEqual(result.availableLetters, 'or');
     assert.strictEqual(Array.isArray(result.players), true);

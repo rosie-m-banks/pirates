@@ -82,7 +82,11 @@ app.post("/update-data", async (req, res) => {
         const payload = req.body;
         const result = await runWorker("game-state", payload);
         broadcast(result);
-        res.json({ ok: true, broadcast: io.engine.clientsCount });
+        res.json({
+            ok: true,
+            broadcast: io.engine.clientsCount,
+            ...result,
+        });
     } catch (err) {
         res.status(500).json({ ok: false, error: err.message });
     }

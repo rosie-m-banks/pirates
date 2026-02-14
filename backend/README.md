@@ -54,12 +54,17 @@ Alternative shape: `wordsPerPlayer` (array of word arrays) and `available` inste
     "actor": ["cat", "o", "r"],
     "cab": ["c", "a", "b"]
   },
+  "lettersToSteal": {
+    "actor": 2,
+    "cab": 3
+  },
   "availableLetters": "abcfg"
 }
 ```
 
 - `players`: echo of input players/words.
 - `recommended_words`: every valid word (length ≥ 3) that can be built by **adding** full words and/or letters, with one construction per word (each construction is a list of building blocks: player words or single letters).
+- `lettersToSteal`: for each recommended word, how many letters you need to add (from your available letters) to form it — i.e. the number of single-letter blocks in the construction. Lower = easier to “steal”.
 - `availableLetters`: normalized (lowercase, a-z only).
 
 ### Game rules (constructions)

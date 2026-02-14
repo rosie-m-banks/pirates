@@ -271,6 +271,8 @@ export function processGameState(payload, dict, dictCounts = null, dictIndex = n
 
   const players = wordsPerPlayer.map((words) => ({ words: [...words] }));
   const recommended_words = {};
+  /** For each recommended word, how many letters you need to add (from available) to form it = stealability. */
+  const lettersToSteal = {};
 
   const availableCounts = letterCounts(availableLetters);
   const poolCounts = new Uint8Array(availableCounts);
@@ -383,12 +385,16 @@ export function processGameState(payload, dict, dictCounts = null, dictIndex = n
       subsetCounts,
       subsetWords
     );
-    if (construction) recommended_words[word] = construction;
+    if (construction) {
+      recommended_words[word] = construction;
+      lettersToSteal[word] = construction.filter((b) => b.length === 1).length;
+    }
   }
 
   return {
     players,
     recommended_words,
+    lettersToSteal,
     availableLetters,
   };
 }
