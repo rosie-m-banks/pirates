@@ -3,9 +3,9 @@
  * with valid constructions (full words + letters, ≥2 blocks, word length ≥3).
  * Used by worker.js and tests.
  *
- * Big O (per request): O(D) formability + O(2^min(n,K)) precompute + O(F·2^min(n,K)) constructions
- * (D=dict size, F=formable words, n=player words, K=16). Precomputed dict counts and subset
- * counts remove O(L) and O(n) from inner loops; cap n so 2^n is constant.
+ * Big O (per request): O(D) formability + O(2^n) precompute + O(F·2^n) constructions
+ * (D=dict size, F=formable words, n=player words). Precomputed dict counts and subset
+ * counts remove O(L) and O(n) from inner loops.
  */
 
 /**
@@ -195,18 +195,12 @@ export function findOneConstruction(
 }
 
 /**
- * Precompute subset letter counts and words for masks 0..2^n-1. Caps n at MAX_PLAYER_WORDS_FOR_SUBSETS.
- * Returns { subsetCounts, subsetWords, playerWordsUnique, playerWordCounts } (possibly truncated).
+ * Precompute subset letter counts and words for masks 0..2^n-1.
+ * Returns { subsetCounts, subsetWords, playerWordsUnique, playerWordCounts }.
  * O(2^n * n) once per game state; then findOneConstruction is O(2^n) per word with O(1) per mask.
  */
 function precomputeSubsets(playerWordsUnique, playerWordCounts) {
-  const cap = Math.min(playerWordsUnique.length, MAX_PLAYER_WORDS_FOR_SUBSETS);
-  const byLen = playerWordsUnique
-    .map((w, i) => ({ w, i }))
-    .sort((a, b) => b.w.length - a.w.length);
-  const truncated = byLen.slice(0, cap).map((x) => x.w);
-  const truncatedCounts = byLen.slice(0, cap).map((x) => playerWordCounts[x.i]);
-  const n = truncated.length;
+  const n = playerWordsUnique.length;
   const numMasks = 1 << n;
   const subsetCounts = [];
   const subsetWords = [];
@@ -215,13 +209,13 @@ function precomputeSubsets(playerWordsUnique, playerWordCounts) {
     const words = [];
     for (let i = 0; i < n; i++) {
       if (!(mask & (1 << i))) continue;
-      c = mergeCounts(c, truncatedCounts[i]);
-      words.push(truncated[i]);
+      c = mergeCounts(c, playerWordCounts[i]);
+      words.push(playerWordsUnique[i]);
     }
     subsetCounts[mask] = c;
     subsetWords[mask] = words;
   }
-  return { subsetCounts, subsetWords, playerWordsUnique: truncated, playerWordCounts: truncatedCounts, n };
+  return { subsetCounts, subsetWords, playerWordsUnique, playerWordCounts };
 }
 
 /**
@@ -240,13 +234,10 @@ export function normalizeGameData(payload) {
 
 export const MIN_WORD_LENGTH = 3;
 
-/** Max player words used for subset enumeration (caps 2^n for O(1) subset count per game). */
-const MAX_PLAYER_WORDS_FOR_SUBSETS = 16;
-
 /**
  * Process game state. Returns { players, recommended_words, availableLetters }.
- * Big O: O(D) formability + O(2^min(n,K)) precompute + O(F * 2^min(n,K)) constructions,
- * with K=MAX_PLAYER_WORDS_FOR_SUBSETS. Use dictCounts when available for O(1) formability per word.
+ * Big O: O(D) formability + O(2^n) precompute + O(F * 2^n) constructions.
+ * Use dictCounts when available for O(1) formability per word.
  * @param {object} payload
  * @param {string[]} dict - dictionary (required)
  * @param {Record<string, number>[]} [dictCounts] - precomputed letterCounts for each dict[i]; if provided, formability is O(1) per word
