@@ -36,9 +36,15 @@ describe('normalizeGameData', () => {
 });
 
 describe('letterCounts and findFormableWords', () => {
-  it('letterCounts returns counts', () => {
-    assert.deepStrictEqual(letterCounts('aab'), { a: 2, b: 1 });
-    assert.deepStrictEqual(letterCounts(''), {});
+  it('letterCounts returns Uint8Array(26)', () => {
+    const c = letterCounts('aab');
+    assert.ok(c instanceof Uint8Array);
+    assert.strictEqual(c.length, 26);
+    assert.strictEqual(c[0], 2); // a
+    assert.strictEqual(c[1], 1); // b
+    const empty = letterCounts('');
+    assert.strictEqual(empty.length, 26);
+    assert.strictEqual(empty[0], 0);
   });
 
   it('findFormableWords respects minLength', () => {
@@ -52,7 +58,8 @@ describe('letterCounts and findFormableWords', () => {
 describe('findOneConstruction', () => {
   it('returns word + letters construction when valid', () => {
     const pool = letterCounts('cator'); // cat + or
-    const construction = findOneConstruction('actor', ['cat'], pool);
+    const available = letterCounts('or');
+    const construction = findOneConstruction('actor', ['cat'], pool, available);
     assert.ok(construction);
     assert.strictEqual(construction.length, 3); // cat, o, r
     assert.ok(construction.includes('cat'));
@@ -62,7 +69,7 @@ describe('findOneConstruction', () => {
 
   it('returns letters-only construction (≥2 blocks)', () => {
     const pool = letterCounts('cab');
-    const construction = findOneConstruction('cab', [], pool);
+    const construction = findOneConstruction('cab', [], pool, pool);
     assert.ok(construction);
     assert.strictEqual(construction.length, 3);
     assert.deepStrictEqual([...construction].sort(), ['a', 'b', 'c']);
@@ -70,16 +77,29 @@ describe('findOneConstruction', () => {
 
   it('returns null for single-word anagram (no addition)', () => {
     const pool = letterCounts('cat'); // only word "cat", no extra letters
-    const construction = findOneConstruction('act', ['cat'], pool);
+    const available = letterCounts('');
+    const construction = findOneConstruction('act', ['cat'], pool, available);
     assert.strictEqual(construction, null);
   });
 
   it('uses full word when building (e.g. cat + r -> cart)', () => {
     const pool = letterCounts('catr');
-    const construction = findOneConstruction('cart', ['cat'], pool);
+    const available = letterCounts('r');
+    const construction = findOneConstruction('cart', ['cat'], pool, available);
     assert.ok(construction);
     assert.ok(construction.includes('cat'));
     assert.ok(construction.includes('r'));
+  });
+
+  it('returns null when remainder would require splitting existing words (only available letters count)', () => {
+    // "aboard" needs a,a,b,o,r,d. Pool = boat + cat + or = a,b,o,a,t,c,a,t,o,r. So we have the letters.
+    // But remainder must come from AVAILABLE only ("or"). No subset of {boat, cat} leaves remainder formable from "or".
+    // boat -> remainder for "aboard" would be a,a,r,d (not formable from "or"). cat -> a,b,o,o,r,d (not from "or").
+    // So findOneConstruction should return null for "aboard" with player words ["boat","cat"] and available "or".
+    const pool = letterCounts('boatcator');
+    const available = letterCounts('or');
+    const construction = findOneConstruction('aboard', ['boat', 'cat'], pool, available);
+    assert.strictEqual(construction, null);
   });
 });
 
@@ -158,6 +178,40 @@ describe('processGameState output format', () => {
     );
     assert.strictEqual(result.availableLetters, 'xyz');
   });
+
+  it('does NOT recommend words that would require splitting letters from existing words (only free letters)', () => {
+    // Free letters are only "or". "aboard" would need a,a,b,o,r,d — we must not build it from a,a,b,d from "boat"/"cat".
+    const result = processGameState(
+      { players: [{ words: ['cat', 'boat'] }], availableLetters: 'or' },
+      ['aboard', 'actor', 'boat', 'cat', 'or']
+    );
+    assert.ok(!('aboard' in result.recommended_words), 'aboard must not be recommended when only or are free');
+    // actor = cat + o + r is valid (remainder or from available)
+    assert.ok('actor' in result.recommended_words);
+    assert.deepStrictEqual(result.recommended_words['actor'].sort(), ['cat', 'o', 'r'].sort());
+  });
+
+  it('subsetCache reused when only availableLetters change (same player words)', () => {
+    const cache = {};
+    const r1 = processGameState(
+      { players: [{ words: ['cat'] }], availableLetters: 'or' },
+      SMALL_DICT,
+      null,
+      null,
+      cache
+    );
+    const r2 = processGameState(
+      { players: [{ words: ['cat'] }], availableLetters: 'o' },
+      SMALL_DICT,
+      null,
+      null,
+      cache
+    );
+    assert.ok('actor' in r1.recommended_words);
+    assert.strictEqual(r2.availableLetters, 'o');
+    assert.ok(cache.signature != null);
+    assert.ok(cache.subsetCounts != null);
+  });
 });
 
 describe('worker integration (run worker with game-state)', () => {
@@ -193,5 +247,40 @@ describe('worker integration (run worker with game-state)', () => {
     assert.ok(
       typeof result.recommended_words === 'object' && !Array.isArray(result.recommended_words)
     );
+  });
+
+  it('worker accepts delta payload (addedWords, availableLetters)', async () => {
+    const { Worker } = await import('worker_threads');
+    const { fileURLToPath } = await import('url');
+    const { dirname, join } = await import('path');
+    const __dirname = dirname(fileURLToPath(import.meta.url));
+    const workerPath = join(__dirname, 'worker.js');
+
+    const worker = new Worker(workerPath, { workerData: {} });
+    const first = await new Promise((resolve, reject) => {
+      worker.on('message', (msg) => {
+        if (msg.ok) resolve(msg.result);
+        else reject(new Error(msg.error));
+      });
+      worker.postMessage({
+        kind: 'game-state',
+        payload: { players: [{ words: ['cat'] }], availableLetters: 'r' },
+      });
+    });
+    const second = await new Promise((resolve, reject) => {
+      worker.on('message', (msg) => {
+        worker.terminate();
+        if (msg.ok) resolve(msg.result);
+        else reject(new Error(msg.error));
+      });
+      worker.postMessage({
+        kind: 'game-state',
+        payload: { addedWords: ['boat'], availableLetters: 'or' },
+      });
+    });
+    assert.strictEqual(second.players[0].words.length, 2);
+    assert.ok(second.players[0].words.includes('cat'));
+    assert.ok(second.players[0].words.includes('boat'));
+    assert.strictEqual(second.availableLetters, 'or');
   });
 });

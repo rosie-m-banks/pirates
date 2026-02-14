@@ -8,27 +8,48 @@ import { parentPort } from 'worker_threads';
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
-import { processGameState } from './gameState.js';
+import { processGameState, letterCounts, normalizeGameData } from './gameState.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-/** In-memory word list (lazy-loaded from data/words.txt). @type {string[]} */
-let dictionary = [];
+/** @type {{ words: string[], counts: Record<string, number>[], wordsByFirstAndLength: Object, maxWordLength: number }} */
+let dictionaryCache = null;
 
-/** Load dictionary from data/words.txt. Uses fallback if file missing. */
+/** Build index: wordsByFirstAndLength[firstLetter][length] = array of dict indices. */
+function buildWordsByFirstAndLength(words) {
+  const index = {};
+  let maxWordLength = 0;
+  for (let i = 0; i < words.length; i++) {
+    const w = words[i];
+    if (w.length < 2) continue;
+    const c = w[0];
+    const len = w.length;
+    if (len > maxWordLength) maxWordLength = len;
+    if (!index[c]) index[c] = {};
+    if (!index[c][len]) index[c][len] = [];
+    index[c][len].push(i);
+  }
+  return { wordsByFirstAndLength: index, maxWordLength };
+}
+
+/** Load dictionary, precompute letter counts and index by (first letter, length). O(D*L) at load. */
 function loadDictionary() {
-  if (dictionary.length > 0) return dictionary;
+  if (dictionaryCache) return dictionaryCache;
+  let words = [];
   try {
     const path = join(__dirname, 'data', 'words.txt');
     const text = readFileSync(path, 'utf8');
-    dictionary = text
+    words = text
       .split(/\r?\n/)
       .map((w) => w.trim().toLowerCase())
       .filter((w) => /^[a-z]{2,}$/.test(w));
   } catch {
-    dictionary = getFallbackWords();
+    words = getFallbackWords();
   }
-  return dictionary;
+  const counts = words.map((w) => letterCounts(w));
+  const { wordsByFirstAndLength, maxWordLength } = buildWordsByFirstAndLength(words);
+  dictionaryCache = { words, counts, wordsByFirstAndLength, maxWordLength };
+  return dictionaryCache;
 }
 
 /** Minimal fallback when data/words.txt is missing */
@@ -36,6 +57,33 @@ function getFallbackWords() {
   const raw =
     'act cat dog god eat tea ate sea see able bail beat care dare deal each idea lead read care deal earl hear bear rare tear acre race cat dog god act tea eat ate';
   return [...new Set(raw.split(/\s+/).filter((w) => w.length >= 2))];
+}
+
+/** Mutable cache keyed by player-words signature; reused when only available letters change. */
+let subsetCache = {};
+/** Last game state (for delta payloads). */
+let lastState = null;
+
+/**
+ * Apply delta to last state, or use full payload. Returns payload to pass to processGameState.
+ * Delta format: { addedWords?: string[], removedWords?: string[], availableLetters?: string }.
+ */
+function applyPayload(payload) {
+  if (payload.addedWords != null || payload.removedWords != null) {
+    const prev = lastState ?? { wordsPerPlayer: [[]], availableLetters: '' };
+    const words = [...prev.wordsPerPlayer.flat()];
+    for (const w of payload.removedWords ?? []) {
+      const i = words.indexOf(w);
+      if (i >= 0) words.splice(i, 1);
+    }
+    for (const w of payload.addedWords ?? []) words.push(w);
+    const availableLetters = payload.availableLetters ?? prev.availableLetters;
+    lastState = { wordsPerPlayer: [words], availableLetters };
+    return { players: [{ words }], availableLetters };
+  }
+  const { wordsPerPlayer, availableLetters } = normalizeGameData(payload);
+  lastState = { wordsPerPlayer, availableLetters };
+  return payload;
 }
 
 // Message handler: main thread sends { kind, payload }; we reply with { ok, result } or { ok: false, error }
@@ -58,7 +106,9 @@ parentPort.on('message', (msg) => {
     const { kind, payload } = msg;
     let result;
     if (kind === 'game-state') {
-      result = processGameState(payload, loadDictionary());
+      const resolved = applyPayload(payload);
+      const { words, counts, wordsByFirstAndLength, maxWordLength } = loadDictionary();
+      result = processGameState(resolved, words, counts, { wordsByFirstAndLength, maxWordLength }, subsetCache);
     } else if (kind === 'image') {
       result = processImageUpdate(payload);
     } else {

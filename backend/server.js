@@ -35,24 +35,40 @@ function broadcast(message) {
     io.emit("data", message);
 }
 
+const workerPath = join(__dirname, "worker.js");
+let sharedWorker = null;
+/** @type {{ kind: string, payload: unknown, resolve: (r: unknown) => void, reject: (e: Error) => void }[] */
+const workerQueue = [];
+
+function onWorkerMessage(msg) {
+    const next = workerQueue.shift();
+    if (next) {
+        if (msg.ok) next.resolve(msg.result);
+        else next.reject(new Error(msg.error));
+    }
+    const pending = workerQueue[0];
+    if (pending) sharedWorker.postMessage({ kind: pending.kind, payload: pending.payload });
+}
+
 /**
- * Run worker.js with the given message kind and payload. Resolves with worker result or rejects on error.
- * Worker is terminated after one reply.
+ * Run worker with the given message kind and payload. Uses a single long-lived worker and a queue.
+ * Resolves with worker result or rejects on error. Worker state (e.g. subset cache) is reused across requests.
  */
 function runWorker(kind, payload) {
     return new Promise((resolve, reject) => {
-        const workerPath = join(__dirname, "worker.js");
-        const worker = new Worker(workerPath, { workerData: {} });
-        worker.on("message", (msg) => {
-            worker.terminate();
-            if (msg.ok) resolve(msg.result);
-            else reject(new Error(msg.error));
-        });
-        worker.on("error", (err) => {
-            worker.terminate();
-            reject(err);
-        });
-        worker.postMessage({ kind, payload });
+        workerQueue.push({ kind, payload, resolve, reject });
+        if (workerQueue.length === 1) {
+            if (!sharedWorker) {
+                sharedWorker = new Worker(workerPath, { workerData: {} });
+                sharedWorker.on("message", onWorkerMessage);
+                sharedWorker.on("error", (err) => {
+                    const p = workerQueue.shift();
+                    if (p) p.reject(err);
+                    sharedWorker = null;
+                });
+            }
+            sharedWorker.postMessage({ kind, payload });
+        }
     });
 }
 
