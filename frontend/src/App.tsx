@@ -16,6 +16,7 @@ interface GameData {
 // Ensure socket is initialized outside the component or memoized
 // Replace with your actual backend URL
 const socket: Socket = io("http://localhost:3000", {
+    path: "/receive-data",
     autoConnect: false, // Prevent auto-connection for better control
 });
 
@@ -62,13 +63,13 @@ function App() {
 
         socket.on("connect", onConnect);
         socket.on("disconnect", onDisconnect);
-        socket.on("gameState", onGameState); // Listening for 'gameState' event
+        socket.on("data", onGameState); // Listening for 'data' event from backend
 
         // Cleanup on unmount
         return () => {
             socket.off("connect", onConnect);
             socket.off("disconnect", onDisconnect);
-            socket.off("gameState", onGameState);
+            socket.off("data", onGameState);
             socket.disconnect();
         };
     }, []);
