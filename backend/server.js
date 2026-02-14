@@ -1,3 +1,9 @@
+/**
+ * Backend server: Express HTTP API + Socket.IO for game state and image updates.
+ * - POST /update-data  -> run anagram worker on game state, broadcast result to all WS clients.
+ * - POST /update-image -> run image worker, broadcast to WS clients.
+ * - WebSocket path /receive-data -> clients receive broadcasted 'data' events.
+ */
 import express from 'express';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
@@ -14,13 +20,18 @@ app.use(express.raw({ type: 'application/octet-stream', limit: '10mb' }));
 
 const httpServer = createServer(app);
 
-// Socket.IO server on path /receive-data so clients connect to ws://host/receive-data
+// Socket.IO on path /receive-data — clients connect at ws://host/receive-data and get 'data' events
 const io = new Server(httpServer, { path: '/receive-data' });
 
+/** Send a message to every connected WebSocket client. */
 function broadcast(message) {
   io.emit('data', message);
 }
 
+/**
+ * Run worker.js with the given message kind and payload. Resolves with worker result or rejects on error.
+ * Worker is terminated after one reply.
+ */
 function runWorker(kind, payload) {
   return new Promise((resolve, reject) => {
     const workerPath = join(__dirname, 'worker.js');
@@ -42,7 +53,7 @@ io.on('connection', () => {
   // Clients connected on /receive-data; they receive via io.emit('data', ...)
 });
 
-// POST /update-data — receive game state, process in worker, broadcast to WebSocket clients
+// POST /update-data — receive game state (JSON), process in worker, broadcast result to all WS clients
 app.post('/update-data', async (req, res) => {
   try {
     const payload = req.body;
@@ -54,7 +65,7 @@ app.post('/update-data', async (req, res) => {
   }
 });
 
-// POST /update-image — receive image update (JSON with base64 or metadata, or raw binary), process, broadcast
+// POST /update-image — accept JSON (metadata/base64) or raw binary; process in worker and broadcast
 app.post('/update-image', async (req, res) => {
   try {
     const isJson = req.is('application/json');
