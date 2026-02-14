@@ -3,22 +3,38 @@ import WordTile from "./components/WordTile";
 import WavePattern from "./components/WavePattern";
 import ScrollHint from "./components/ScrollHint";
 
+interface Player {
+    words: string[];
+}
+
 interface StudentViewProps {
     availableLetters?: string[];
-    playerWords?: string[];
-    opponentWords?: string[];
+    players?: Player[];
     hint?: string;
 }
 
+// Color palette for different players (beach/pirate themed)
+const PLAYER_COLORS = [
+    { bg: "#e8b86d", border: "#d4a355", label: "Captain" }, // Gold
+    { bg: "#6b9ac4", border: "#4e7ba8", label: "First Mate" }, // Ocean Blue
+    { bg: "#c96b6b", border: "#b35454", label: "Quartermaster" }, // Coral Red
+    { bg: "#7bc47b", border: "#5fa85f", label: "Navigator" }, // Sea Green
+    { bg: "#b584c4", border: "#9966a8", label: "Gunner" }, // Purple
+    { bg: "#c4a76b", border: "#a8895f", label: "Cook" }, // Sandy Brown
+];
+
 export default function StudentView({
-    availableLetters = ["A", "B", "C", "O", "E"],
-    playerWords = ["CAT", "BOAT"],
-    opponentWords = ["DOG", "FISH"],
+    availableLetters = ["A", "B", "C", "D", "E"],
+    players = [
+        { words: ["CAT", "BOAT", "HELLO"] },
+        { words: ["SHIP", "ANCHOR", "TREASURE"] },
+        { words: ["PARROT", "MAP", "GOLD"] },
+    ],
     hint = "Hint #1: There is a three letter word available",
 }: StudentViewProps) {
     return (
         <div className="min-h-screen flex flex-col items-center justify-start py-12 px-8">
-            <header className="mb-12">
+            <header className="mb-8">
                 <h1
                     className="relative text-8xl tracking-wider flex items-center gap-4"
                     style={{
@@ -41,6 +57,14 @@ export default function StudentView({
             </header>
 
             <section className="mb-8">
+                <ScrollHint hint={hint} width={600} />
+            </section>
+
+            <section className="">
+                <div className=""></div>
+            </section>
+
+            <section className="mb-8">
                 <div className="flex gap-4 justify-center">
                     {availableLetters.map((letter, i) => (
                         <BeachTile key={i} letter={letter} size="small" />
@@ -48,37 +72,33 @@ export default function StudentView({
                 </div>
             </section>
 
-            <section className="mb-4">
-                <div className="flex gap-6 justify-center flex-wrap">
-                    {playerWords.map((word, i) => (
-                        <WordTile
-                            key={i}
-                            word={word}
-                            backgroundColor="var(--sand-yellow)"
-                            borderColor="#d4b55c"
-                        />
-                    ))}
-                </div>
-            </section>
+            {players.map((player, playerIndex) => {
+                const colorScheme =
+                    PLAYER_COLORS[playerIndex % PLAYER_COLORS.length];
 
-            <WavePattern count={5} />
+                return (
+                    <div key={playerIndex} className="w-full mb-8">
+                        <div className="flex flex-col items-center">
+                            <div className="flex gap-6 justify-center flex-wrap max-w-5xl">
+                                {player.words.map((word, wordIndex) => (
+                                    <WordTile
+                                        key={wordIndex}
+                                        word={word}
+                                        borderColor={colorScheme.border}
+                                    />
+                                ))}
+                            </div>
+                        </div>
 
-            <section className="mb-8 mt-4">
-                <div className="flex gap-6 justify-center flex-wrap">
-                    {opponentWords.map((word, i) => (
-                        <WordTile
-                            key={i}
-                            word={word}
-                            backgroundColor="var(--sand-yellow)"
-                            borderColor={i === 0 ? "#c44e4e" : "#4e7bc4"}
-                        />
-                    ))}
-                </div>
-            </section>
-
-            <section className="mt-8">
-                <ScrollHint hint={hint} width={600} />
-            </section>
+                        {/* Wave separator between players (except after last player) */}
+                        {playerIndex == 0 && (
+                            <div className="mt-8">
+                                <WavePattern count={3} />
+                            </div>
+                        )}
+                    </div>
+                );
+            })}
         </div>
     );
 }
