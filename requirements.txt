@@ -1,0 +1,7 @@
+cv2
+pytesseract
+threading
+matplotlib
+yaml
+os
+logging
