@@ -20,10 +20,23 @@ export default function StudentView({
         <div className="min-h-screen flex flex-col items-center justify-start py-12 px-8">
             <header className="mb-12">
                 <h1
-                    className="text-8xl tracking-wider flex items-center gap-4 text-white"
-                    style={{ fontFamily: "FatPix, sans-serif" }}
+                    className="relative text-8xl tracking-wider flex items-center gap-4"
+                    style={{
+                        fontFamily: "FatPix, sans-serif",
+                    }}
                 >
-                    <span>Pirates</span>
+                    {/* Shadow layer */}
+                    <span className="absolute top-2 left-2 text-black/60 select-none pointer-events-none">
+                        Pirates
+                    </span>
+
+                    {/* Main text */}
+                    <span
+                        className="relative text-(--ocean-blue)"
+                        style={{ WebkitTextStroke: "4px white" }}
+                    >
+                        Pirates
+                    </span>
                 </h1>
             </header>
 
