@@ -1,7 +1,9 @@
-cv2
+opencv-python
 pytesseract
-threading
 matplotlib
-yaml
-os
-logging
+depthai
+# TrOCR (letter recognition)
+torch
+transformers
+protobuf
+sentencepiece

@@ -1,13 +1,11 @@
 """Pretrained single-character recogniser using TrOCR (microsoft/trocr-small-printed)."""
 
-import os
 import torch
 import numpy as np
 from PIL import Image
 from transformers import TrOCRProcessor, VisionEncoderDecoderModel
 
 MODEL_NAME = "microsoft/trocr-small-printed"
-LOCAL_MODEL_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "models", "trocr-small-printed")
 
 
 class LetterRecognizer:
@@ -20,19 +18,11 @@ class LetterRecognizer:
         print(f"LetterRecognizer ready on {self.device}")
 
     def _load(self):
-        """Load from local cache. Download from HF only on first run."""
-        if os.path.isdir(LOCAL_MODEL_DIR):
-            print(f"Loading model from {LOCAL_MODEL_DIR}")
-            processor = TrOCRProcessor.from_pretrained(LOCAL_MODEL_DIR)
-            model = VisionEncoderDecoderModel.from_pretrained(LOCAL_MODEL_DIR)
-        else:
-            print(f"First run — downloading {MODEL_NAME} from HuggingFace...")
-            processor = TrOCRProcessor.from_pretrained(MODEL_NAME)
-            model = VisionEncoderDecoderModel.from_pretrained(MODEL_NAME)
-            os.makedirs(LOCAL_MODEL_DIR, exist_ok=True)
-            processor.save_pretrained(LOCAL_MODEL_DIR)
-            model.save_pretrained(LOCAL_MODEL_DIR)
-            print(f"Saved model to {LOCAL_MODEL_DIR}")
+        """Load from HuggingFace (uses their cache; no local save to avoid path bugs)."""
+        print(f"Loading TrOCR from {MODEL_NAME}...")
+        # use_fast=False avoids a transformers bug where vocab_file is None (AttributeError: endswith)
+        processor = TrOCRProcessor.from_pretrained(MODEL_NAME, use_fast=False)
+        model = VisionEncoderDecoderModel.from_pretrained(MODEL_NAME)
         return processor, model
 
     # ── Public API ───────────────────────────────────────────────────
