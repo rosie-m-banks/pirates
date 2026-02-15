@@ -13,10 +13,12 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_DATA_DIR = os.path.join(SCRIPT_DIR, "letter_data")
 INPUT_SIZE = 64
 BATCH_SIZE = 32
-EPOCHS = 500
-LR = 1e-3
+EPOCHS = 200
+LR = 4e-4
 VAL_FRAC = 0.15
 EARLY_STOP_PATIENCE = 70  # stop if no val improvement for this many epochs (reset when LR is reduced)
+SCHEDULER_PATIENCE = 15   # epochs without val improvement before reducing LR
+GRAD_CLIP = 1.0           # max gradient norm to reduce overshoot
 
 
 def main():
@@ -75,12 +77,15 @@ def main():
     batch_size = min(BATCH_SIZE, max(4, n_train))
     use_cuda = torch.cuda.is_available()
     train_loader = DataLoader(train_sub, batch_size=batch_size, shuffle=True, num_workers=0, pin_memory=use_cuda)
+    # Train accuracy for reporting: same indices as train_sub but with fixed (no-augment) transform so it's stable
+    train_eval_ds = Subset(datasets.ImageFolder(args.data, transform=val_transform), train_sub.indices)
+    train_eval_loader = DataLoader(train_eval_ds, batch_size=batch_size, shuffle=False, num_workers=0)
     val_loader = DataLoader(val_subset, batch_size=batch_size, shuffle=False, num_workers=0) if n_val > 0 else None
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = LetterCNN(num_classes=NUM_CLASSES).to(device)
     opt = torch.optim.Adam(model.parameters(), lr=args.lr)
-    sched = torch.optim.lr_scheduler.ReduceLROnPlateau(opt, mode="max", factor=0.5, patience=8, min_lr=1e-6)
+    sched = torch.optim.lr_scheduler.ReduceLROnPlateau(opt, mode="max", factor=0.5, patience=SCHEDULER_PATIENCE, min_lr=1e-6)
     criterion = nn.CrossEntropyLoss()
 
     print(f"Training on {n_train} samples" + (f", validating on {n_val}" if n_val else " (no val split)") + f", batch_size={batch_size}. Classes: {train_ds.classes}")
@@ -96,6 +101,8 @@ def main():
             logits = model(x)
             loss = criterion(logits, y)
             loss.backward()
+            if GRAD_CLIP > 0:
+                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=GRAD_CLIP)
             opt.step()
             train_loss += loss.item()
         train_loss /= len(train_loader)
@@ -103,7 +110,7 @@ def main():
         model.eval()
         correct, total = 0, 0
         with torch.no_grad():
-            for x, y in train_loader:
+            for x, y in train_eval_loader:
                 x, y = x.to(device), y.to(device)
                 logits = model(x)
                 pred = logits.argmax(dim=1)

@@ -1,13 +1,19 @@
-"""Detect Bananagram tiles and read letters. Prefers trained LetterCNN (train_letter_model), then TrOCR, LeNet, then templates."""
+"""Detect Bananagram tiles and read letters. Prefers LeNet (train_lenet_letter), then LetterCNN, TrOCR, then templates."""
 
 from extract_tiles import TileExtractor
 import cv2
 import numpy as np
 import os
 import shutil
+import sys
 from concurrent.futures import ThreadPoolExecutor
 
 from template_recognizer import TemplateRecognizer
+
+try:
+    import pytesseract
+except ImportError:
+    pytesseract = None
 
 try:
     from letter_model import LetterRecognizer as TrOCRLetterRecognizer
@@ -39,12 +45,18 @@ class ImageProcessor:
     BLACK_PIXEL_THRESH = 0.02
     INK_THRESHOLD = 140
 
-    def __init__(self, camera_config="camera.yaml", use_cnn=True):
-        self.extractor = TileExtractor(camera_config)
+    def __init__(self, camera_config="camera.yaml", photo_path=None, use_cnn=True):
+        self.extractor = TileExtractor(camera_config, photo_path=photo_path)
         self.recognizer = None
         if use_cnn:
-            # Prefer your trained model from train_letter_model.py (LetterCNN)
-            if _LETTER_CNN_AVAILABLE and LETTER_CNN_PATH and os.path.isfile(LETTER_CNN_PATH):
+            # Prefer LeNet (train_lenet_letter.py), then LetterCNN, then TrOCR
+            if _LENET_AVAILABLE and LENET_PATH and os.path.isfile(LENET_PATH):
+                try:
+                    self.recognizer = LeNetLetterRecognizer()
+                    print("ImageProcessor ready (LeNet)")
+                except Exception as e:
+                    print(f"LeNet load failed: {e}")
+            if self.recognizer is None and _LETTER_CNN_AVAILABLE and LETTER_CNN_PATH and os.path.isfile(LETTER_CNN_PATH):
                 try:
                     self.recognizer = LetterCNNRecognizer()
                     print("ImageProcessor ready (LetterCNN from train_letter_model)")
@@ -56,12 +68,6 @@ class ImageProcessor:
                     print("ImageProcessor ready (letter model / TrOCR)")
                 except Exception as e:
                     print(f"Letter model load failed: {e}")
-            if self.recognizer is None and _LENET_AVAILABLE and LENET_PATH and os.path.isfile(LENET_PATH):
-                try:
-                    self.recognizer = LeNetLetterRecognizer()
-                    print("ImageProcessor ready (LeNet)")
-                except Exception as e:
-                    print(f"LeNet load failed: {e}")
         if self.recognizer is None:
             self.recognizer = TemplateRecognizer()
             if not self.recognizer.available:
@@ -81,24 +87,129 @@ class ImageProcessor:
         tl, tr, bl, br = ordered[0], ordered[1], ordered[2], ordered[3]
         return np.array([tl, tr, br, bl], dtype=np.float32)
 
+    # ── Crop ─────────────────────────────────────────────────────────
+
+    @staticmethod
+    def _remove_black_rim(crop, depth_threshold=0.2, black_threshold=None):
+        """Remove black pixels from the rim unless they connect to content
+        that extends more than depth_threshold (e.g., 20%) into the image.
+        
+        Args:
+            crop: Grayscale image
+            depth_threshold: Fraction of image depth (0.0-1.0) that content must reach
+            black_threshold: Pixel value below which is considered "black"
+        
+        Returns:
+            Cropped image with black rim removed
+        """
+        if black_threshold is None:
+            black_threshold = ImageProcessor.INK_THRESHOLD
+        
+        h, w = crop.shape
+        depth_pixels = int(min(h, w) * depth_threshold)
+        
+        # Identify black pixels
+        black_mask = (crop < black_threshold).astype(np.uint8)
+        
+        # Use connected components to find all black regions
+        num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(
+            black_mask, connectivity=8
+        )
+        
+        # Create mask: 1 for pixels to keep, 0 for pixels to remove
+        keep_mask = np.ones((h, w), dtype=np.uint8)
+        
+        # Check each connected component
+        for label_id in range(1, num_labels):  # Skip background (label 0)
+            # Get all pixels in this component
+            component_mask = (labels == label_id)
+            component_y, component_x = np.where(component_mask)
+            
+            if len(component_y) == 0:
+                continue
+            
+            # Check if this component touches any edge
+            touches_edge = (
+                np.any(component_y == 0) or  # top edge
+                np.any(component_y == h - 1) or  # bottom edge
+                np.any(component_x == 0) or  # left edge
+                np.any(component_x == w - 1)  # right edge
+            )
+            
+            if not touches_edge:
+                # Component doesn't touch edge, keep it
+                continue
+            
+            # Component touches edge - check if it extends deep enough
+            # Calculate minimum distance from any edge
+            min_dist_from_top = np.min(component_y)
+            min_dist_from_bottom = h - 1 - np.max(component_y)
+            min_dist_from_left = np.min(component_x)
+            min_dist_from_right = w - 1 - np.max(component_x)
+            
+            min_dist_from_edge = min(
+                min_dist_from_top,
+                min_dist_from_bottom,
+                min_dist_from_left,
+                min_dist_from_right
+            )
+            
+            # If component doesn't reach deep enough, mark for removal
+            if min_dist_from_edge < depth_pixels:
+                keep_mask[component_mask] = 0
+        
+        # Apply mask: set removed pixels to white (background)
+        result = crop.copy()
+        result[keep_mask == 0] = 255
+        
+        return result
+
     @staticmethod
     def _crop_tile(gray, rect, pad=6):
-        """Warp rotated rect to upright square crop."""
+        """Warp a rotated rect into an upright square crop."""
+        # Validate rect dimensions
+        if rect[1][0] <= 0 or rect[1][1] <= 0:
+            # Invalid rect, return a small white image
+            return np.ones((128, 128), dtype=np.uint8) * 255
+        
         src_pts = cv2.boxPoints(rect).astype(np.float32)
+        
+        # Validate source points are within image bounds
+        h_img, w_img = gray.shape
+        if np.any(src_pts < 0) or np.any(src_pts[:, 0] >= w_img) or np.any(src_pts[:, 1] >= h_img):
+            # Points outside bounds, clip them
+            src_pts[:, 0] = np.clip(src_pts[:, 0], 0, w_img - 1)
+            src_pts[:, 1] = np.clip(src_pts[:, 1], 0, h_img - 1)
+        
         src_pts = ImageProcessor._order_points(src_pts)
         size = int(max(rect[1])) + pad * 2
+        if size <= 0:
+            return np.ones((128, 128), dtype=np.uint8) * 255
+        
         dst_pts = np.array(
             [[pad, pad], [size - pad, pad],
              [size - pad, size - pad], [pad, size - pad]],
             dtype=np.float32,
         )
-        M = cv2.getPerspectiveTransform(src_pts, dst_pts)
-        crop = cv2.warpPerspective(gray, M, (size, size))
-        margin = int(size * 0.1)
-        inner = crop[margin:size - margin, margin:size - margin]
-        h = inner.shape[0]
-        inner = inner[0:int(h * 0.85), :]
+        try:
+            M = cv2.getPerspectiveTransform(src_pts, dst_pts)
+        except cv2.error:
+            return np.ones((128, 128), dtype=np.uint8) * 255
+
+        crop = cv2.warpPerspective(gray, M, (size, size),
+                                   flags=cv2.INTER_LINEAR,
+                                   borderMode=cv2.BORDER_CONSTANT,
+                                   borderValue=255)
+        h, w = crop.shape[0], crop.shape[1]
+        margin_h = int(h * 0.15)
+        margin_w = int(w * 0.15)
+        if margin_h * 2 >= h or margin_w * 2 >= w:
+            inner = crop
+        else:
+            inner = crop[margin_h:h - margin_h, margin_w:w - margin_w]
         inner = cv2.resize(inner, (80, 80), interpolation=cv2.INTER_CUBIC)
+
+        # White buffer so letter is never clipped
         inner = cv2.copyMakeBorder(
             inner, 24, 24, 24, 24, cv2.BORDER_CONSTANT, value=255
         )
@@ -114,13 +225,117 @@ class ImageProcessor:
         dark_ratio = np.sum(center < ImageProcessor.INK_THRESHOLD) / center.size
         return dark_ratio < ImageProcessor.BLACK_PIXEL_THRESH
 
+    # ── Bimodal thresholding ─────────────────────────────────────────
+
+    @staticmethod
+    def _find_bimodal_threshold(gray):
+        # Otsu as baseline
+        t_otsu, _ = cv2.threshold(
+            gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU
+        )
+
+        # percentile guard
+        lo, hi = np.percentile(gray, (5, 95))
+        # Raise baseline white by adding offset and adjusting upper bound
+        t = int(np.clip(t_otsu - 50, lo + 10, hi - 10))
+        return t
+
+
+    # ── Tesseract single-character recognition ─────────────────────
+
+    TESS_CONFIG = "--psm 10 -c tessedit_char_whitelist=ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+
+    @staticmethod
+    def _make_variants(gray):
+        """Return multiple preprocessed versions of a crop so that
+        different letter shapes each get a variant that works well."""
+        h, w = gray.shape
+        variants = []
+
+        # v0: raw grayscale at original size (works for most letters)
+        variants.append(gray)
+
+        # v1: Otsu-binarised, upscaled 3× (helps O, T, H, round shapes)
+        _, binary = cv2.threshold(gray, 0, 255,
+                                  cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        up_bin = cv2.resize(binary, (w * 3, h * 3),
+                            interpolation=cv2.INTER_CUBIC)
+        variants.append(up_bin)
+
+        # v2: Otsu-binarised + dilate dark strokes, upscaled 3× (helps I, Q)
+        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (2, 2))
+        dilated = cv2.erode(binary, kernel, iterations=1)  # erode white = thicken black
+        up_dil = cv2.resize(dilated, (w * 3, h * 3),
+                            interpolation=cv2.INTER_CUBIC)
+        variants.append(up_dil)
+
+        return variants
+
+    @staticmethod
+    def _tesseract_one(img):
+        """Run Tesseract on a single image.
+        Returns (letter_or_None, confidence)."""
+        if pytesseract is None:
+            return None, -1
+        try:
+            data = pytesseract.image_to_data(
+                img, config=ImageProcessor.TESS_CONFIG,
+                output_type=pytesseract.Output.DICT,
+            )
+        except pytesseract.TesseractError:
+            return None, -1
+
+        best_letter, best_conf = None, -1
+        for text, conf in zip(data["text"], data["conf"]):
+            conf = int(conf)
+            text = text.strip()
+            if len(text) == 1 and text.isalpha() and conf > best_conf:
+                best_letter = text.upper()
+                best_conf = conf
+
+        # Fallback: image_to_string sometimes returns a letter that
+        # image_to_data missed
+        if best_letter is None:
+            try:
+                raw = pytesseract.image_to_string(
+                    img, config=ImageProcessor.TESS_CONFIG
+                ).strip()
+                if len(raw) == 1 and raw.isalpha():
+                    best_letter = raw.upper()
+                    best_conf = 0
+            except pytesseract.TesseractError:
+                pass
+
+        return best_letter, best_conf
+
+    @staticmethod
+    def _recognize_char(crop):
+        """Try multiple preprocessing variants × 4 rotations, return
+        (letter_or_None, confidence) for the best result."""
+        variants = ImageProcessor._make_variants(crop)
+        best_letter, best_conf = None, -1
+        for variant in variants:
+            for k in range(4):
+                rotated = variant if k == 0 else np.rot90(variant, k)
+                letter, conf = ImageProcessor._tesseract_one(rotated)
+                if letter is not None and conf > best_conf:
+                    best_letter = letter
+                    best_conf = conf
+        return best_letter, best_conf
+
+    # ── Parallel preprocessing ───────────────────────────────────────
+
     @staticmethod
     def _preprocess_one(gray, rect, idx, crop_dir):
         """Crop tile, check blank, save crop. Returns (idx, rect, crop, is_blank)."""
         crop = ImageProcessor._crop_tile(gray, rect)
         blank = ImageProcessor._is_blank(crop)
         crop_path = os.path.join(crop_dir, f"tile_{idx:03d}.png")
-        cv2.imwrite(crop_path, crop)
+        if len(crop.shape) == 2:
+            cv2.imwrite(crop_path, crop)
+        else:
+            gray_crop = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY) if len(crop.shape) == 3 else crop
+            cv2.imwrite(crop_path, gray_crop)
         return idx, rect, crop, blank
 
     @staticmethod
@@ -142,30 +357,18 @@ class ImageProcessor:
                             cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
         return output
 
-    def process(self, output_path="output_boxes.jpg", crop_dir="crops", image_path=None):
+    # ── Public API ───────────────────────────────────────────────────
+
+    def process(self, output_path="output_boxes.jpg", crop_dir="crops-05"):
+        # Prepare crop directory
         if os.path.exists(crop_dir):
             shutil.rmtree(crop_dir)
         os.makedirs(crop_dir)
 
-        if image_path is not None:
-            frame = cv2.imread(image_path)
-            if frame is None:
-                # try with common extensions if path has none
-                for ext in (".jpg", ".jpeg", ".png", ".bmp"):
-                    p = image_path + ext if not image_path.lower().endswith(ext) else image_path
-                    if p == image_path:
-                        continue
-                    frame = cv2.imread(p)
-                    if frame is not None:
-                        break
-            if frame is None:
-                raise FileNotFoundError(f"Could not load image: {image_path}")
-        else:
-            frame = self.extractor.oak.get_gray()
-            if frame is None:
-                raise RuntimeError("Could not get a frame from the Oak camera")
-        gray = frame if len(frame.shape) == 2 else cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        tiles = self.extractor._detect_tiles(gray)
+        
+        tiles, gray = self.extractor.extract()
+        if gray is None or tiles is None:
+            raise RuntimeError("Could not get a frame from the extractor")
         print(f"Found {len(tiles)} tiles, preprocessing...")
 
         preprocessed = []
@@ -213,7 +416,10 @@ class ImageProcessor:
 
 
 if __name__ == "__main__":
-    import sys
-    processor = ImageProcessor()
-    image_path = sys.argv[1] if len(sys.argv) > 1 else None
-    processor.process(image_path=image_path)
+    # Parse command-line arguments
+    # Usage: python3 process_image.py [crop_dir] [photo_path]
+    crop_dir = sys.argv[1] if len(sys.argv) > 1 else "crops-test"
+    photo_path = sys.argv[2] if len(sys.argv) > 2 else None
+    
+    processor = ImageProcessor(photo_path=photo_path)
+    processor.process(crop_dir=crop_dir)

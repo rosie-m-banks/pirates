@@ -1,14 +1,17 @@
 from oak import Oak
 import cv2
 import numpy as np
-
+import time
+import sys
 
 class TileExtractor:
     """Grabs a grayscale frame from the Oak camera, detects Scrabble tile
     bounding boxes, draws them on the image, and writes the result to disk."""
 
-    def __init__(self, camera_config="camera.yaml"):
-        self.oak = Oak(camera_config)
+    def __init__(self, camera_config="camera.yaml", photo_path=None):
+        # self.oak = Oak(camera_config)
+        self.photo_path = photo_path or "output_photo4.jpg"
+        time.sleep(10)
 
     # ── Tile detection ───────────────────────────────────────────────
 
@@ -26,8 +29,8 @@ class TileExtractor:
 
         contours, _ = cv2.findContours(closed, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
 
-        min_area = 10000
-        max_area = 40000
+        min_area = 4000
+        max_area = 10000
 
         candidates = []
         for cnt in contours:
@@ -82,28 +85,56 @@ class TileExtractor:
 
     # ── Public API ───────────────────────────────────────────────────
 
-    def extract(self, output_path="output_tiles.jpg"):
-        """Grab a frame, detect tiles, draw boxes, and save the image.
+    def extract(self, output_path="output_tiles.jpg", fps=30, output_jpg=False):
+        """Continuously grab frames at specified fps, detect tiles, draw boxes, and save the image.
+
+        Args:
+            output_path: Path to save the output image
+            fps: Frame rate for polling (default: 30)
 
         Returns:
-            tiles: list of detected RotatedRect tuples
-            output: the annotated BGR image (numpy array)
+            tiles: list of detected RotatedRect tuples (from last frame)
+            output: the annotated BGR image (numpy array) (from last frame)
         """
-        frame = self.oak.get_gray()
-        if frame is None:
-            raise RuntimeError("Could not get a frame from the Oak camera")
+        frame_time = 1.0 / fps
+        tiles = None
+        output = None
+        
+        try:
+            while True:
+                start_time = time.time()
+                
+                frame = cv2.imread(self.photo_path)#self.oak.get_gray()
+                if frame is None:
+                    time.sleep(frame_time)
+                    continue
 
-        gray = frame if len(frame.shape) == 2 else cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        tiles = self._detect_tiles(gray)
-        output = self._draw_boxes(gray, tiles)
+                gray = frame if len(frame.shape) == 2 else cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+                tiles = self._detect_tiles(gray)
+                output = self._draw_boxes(gray, tiles)
 
-        cv2.imwrite(output_path, output)
-        print(f"Saved {len(tiles)} tile boxes to {output_path}")
+                
+                cv2.imwrite(output_path, output)
+                print(f"Saved {len(tiles)} tile boxes to {output_path}")
 
+                # Maintain 30 fps by sleeping for remaining time
+                elapsed = time.time() - start_time
+                sleep_time = max(0, frame_time - elapsed)
+                if sleep_time > 0:
+                    time.sleep(sleep_time)
+                
+                return tiles, gray
+                    
+        except KeyboardInterrupt:
+            print("\nStopping tile extraction...")
+        
         return tiles, output
+    
 
 
 if __name__ == "__main__":
-    extractor = TileExtractor()
+    photo_path = sys.argv[1] if len(sys.argv) > 1 else None
+    extractor = TileExtractor(photo_path=photo_path)
     extractor.extract()
+    # Let Python handle cleanup naturally - explicit close() causes deadlocks
 
