@@ -3,8 +3,9 @@ import depthai as dai
 import os
 import cv2
 import time
+import atexit
 from generic_camera import GenericCamera
-from threading import Timer
+from threading import Timer, Lock
 
 resolution_map = {
     "400P": dai.MonoCameraProperties.SensorResolution.THE_400_P,
@@ -40,31 +41,37 @@ class Oak(GenericCamera):
     def __init__(self, path):
         super().__init__("oak_node", path)
 
-        # self.path = path
-        # self._camera_info = self.get_cam_data(self.load_cameras_yaml(), "oak")
-        # self.gray = None
+        self.path = path
+        self._camera_info = self.get_cam_data(self.load_cameras_yaml(), "oak")
+        self.gray = None
+        self._gray_lock = Lock()  # Lock for thread-safe access to self.gray
+        self._device_objects = {}  # Store device objects to prevent garbage collection
 
-        # for key, cam_cfg in self._camera_info.items():
-        #     cam_cfg = cam_cfg.get("ros__parameters")
+        for key, cam_cfg in self._camera_info.items():
+            cam_cfg = cam_cfg.get("ros__parameters")
 
-        #     self.logger.info(
-        #         f"Starting OAK camera: {key} (mxid={cam_cfg['camera']['i_mx_id']})"
-        #     )
+            self.logger.info(
+                f"Starting OAK camera: {key} (mxid={cam_cfg['camera']['i_mx_id']})"
+            )
 
-        #     device = self._open_device_with_retry(cam_cfg["camera"]["i_mx_id"])
-        #     pipeline = dai.Pipeline(device)
+            device = self._open_device_with_retry(cam_cfg["camera"]["i_mx_id"])
+            pipeline = dai.Pipeline(device)
 
-        #     rgb = config_rgb_image(pipeline, key, cam_cfg)
+            rgb = config_rgb_image(pipeline, key, cam_cfg)
             
-        #     self.devices[key] = pipeline
-        #     self.queues[key] = {
-        #         "rgb": rgb
-        #     }
+            self.devices[key] = pipeline
+            self._device_objects[key] = device  # Store device to keep it alive
+            self.queues[key] = {
+                "rgb": rgb
+            }
 
-        #     pipeline.start()
+            pipeline.start()
 
         # self.timer = Timer(1.0 / 30.0, self.publish_frames)
         # self.timer.start()
+        
+        # Register cleanup to happen at Python exit
+        atexit.register(self._cleanup_on_exit)
 
     def _open_device_with_retry(self, mxid, max_attempts=5, delay_s=1.0):
         last_exc = None
@@ -106,11 +113,34 @@ class Oak(GenericCamera):
             rgb_frame = self.queues[key]["rgb"].tryGet()
 
             if rgb_frame is not None:
-                self.gray = cv2.cvtColor(rgb_frame.getCvFrame(), cv2.COLOR_BGR2GRAY)
+                print("we have a frame")
+                frame = rgb_frame.getCvFrame()
+                gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+                with self._gray_lock:
+                    self.gray = gray_frame
 
     def get_gray(self):
-        img = cv2.imread('pirate.jpg')
-        img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-        return img
+        self.publish_frames()
+        with self._gray_lock:
+            if self.gray is not None:
+                return self.gray.copy()
+            return None
 
+    def _cleanup_on_exit(self):
+        """Cleanup method registered with atexit - runs at Python shutdown."""
+        # Just clear references - let depthai handle device cleanup
+        # Explicit close() causes deadlocks, so we just let Python GC handle it
+        self.queues.clear()
+        self._device_objects.clear()
+        self.devices.clear()
 
+    def close(self):
+        """Properly close all devices and cleanup resources."""
+        # Note: Explicit close() can cause deadlocks with depthai
+        # This method is kept for API compatibility but may not work reliably
+        self._cleanup_on_exit()
+
+    def __del__(self):
+        """Cleanup on object destruction."""
+        # Don't do anything - let atexit handle cleanup
+        pass

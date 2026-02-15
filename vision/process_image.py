@@ -37,6 +37,81 @@ class ImageProcessor:
     # ── Crop ─────────────────────────────────────────────────────────
 
     @staticmethod
+    def _remove_black_rim(crop, depth_threshold=0.2, black_threshold=None):
+        """Remove black pixels from the rim unless they connect to content
+        that extends more than depth_threshold (e.g., 20%) into the image.
+        
+        Args:
+            crop: Grayscale image
+            depth_threshold: Fraction of image depth (0.0-1.0) that content must reach
+            black_threshold: Pixel value below which is considered "black"
+        
+        Returns:
+            Cropped image with black rim removed
+        """
+        if black_threshold is None:
+            black_threshold = ImageProcessor.INK_THRESHOLD
+        
+        h, w = crop.shape
+        depth_pixels = int(min(h, w) * depth_threshold)
+        
+        # Identify black pixels
+        black_mask = (crop < black_threshold).astype(np.uint8)
+        
+        # Use connected components to find all black regions
+        num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(
+            black_mask, connectivity=8
+        )
+        
+        # Create mask: 1 for pixels to keep, 0 for pixels to remove
+        keep_mask = np.ones((h, w), dtype=np.uint8)
+        
+        # Check each connected component
+        for label_id in range(1, num_labels):  # Skip background (label 0)
+            # Get all pixels in this component
+            component_mask = (labels == label_id)
+            component_y, component_x = np.where(component_mask)
+            
+            if len(component_y) == 0:
+                continue
+            
+            # Check if this component touches any edge
+            touches_edge = (
+                np.any(component_y == 0) or  # top edge
+                np.any(component_y == h - 1) or  # bottom edge
+                np.any(component_x == 0) or  # left edge
+                np.any(component_x == w - 1)  # right edge
+            )
+            
+            if not touches_edge:
+                # Component doesn't touch edge, keep it
+                continue
+            
+            # Component touches edge - check if it extends deep enough
+            # Calculate minimum distance from any edge
+            min_dist_from_top = np.min(component_y)
+            min_dist_from_bottom = h - 1 - np.max(component_y)
+            min_dist_from_left = np.min(component_x)
+            min_dist_from_right = w - 1 - np.max(component_x)
+            
+            min_dist_from_edge = min(
+                min_dist_from_top,
+                min_dist_from_bottom,
+                min_dist_from_left,
+                min_dist_from_right
+            )
+            
+            # If component doesn't reach deep enough, mark for removal
+            if min_dist_from_edge < depth_pixels:
+                keep_mask[component_mask] = 0
+        
+        # Apply mask: set removed pixels to white (background)
+        result = crop.copy()
+        result[keep_mask == 0] = 255
+        
+        return result
+
+    @staticmethod
     def _crop_tile(gray, rect, pad=6):
         """Warp a rotated rect into an upright square crop."""
         src_pts = cv2.boxPoints(rect).astype(np.float32)
@@ -51,11 +126,12 @@ class ImageProcessor:
         M = cv2.getPerspectiveTransform(src_pts, dst_pts)
         crop = cv2.warpPerspective(gray, M, (size, size))
 
-        # Light trim to cut tile border; keep bottom trim mild
-        margin = int(size * 0.1)
-        inner = crop[margin:size - margin, margin:size - margin]
-        h = inner.shape[0]
-        inner = inner[0:int(h * 0.85), :]
+        # Remove black rim unless it connects to content >20% deep
+        crop = ImageProcessor._remove_black_rim(crop, depth_threshold=0.2)
+        
+        # Trim bottom 15% to avoid tile border artifacts
+        h = crop.shape[0]
+        inner = crop[0:int(h * 0.85), :]
 
         inner = cv2.resize(inner, (80, 80), interpolation=cv2.INTER_CUBIC)
 
@@ -81,6 +157,21 @@ class ImageProcessor:
         # Count pixels darker than INK_THRESHOLD (actual ink, not Otsu noise)
         dark_ratio = np.sum(center < ImageProcessor.INK_THRESHOLD) / center.size
         return dark_ratio < ImageProcessor.BLACK_PIXEL_THRESH
+
+    # ── Bimodal thresholding ─────────────────────────────────────────
+
+    def _find_bimodal_threshold(gray):
+        # Otsu as baseline
+        t_otsu, _ = cv2.threshold(
+            gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU
+        )
+
+        # percentile guard
+        lo, hi = np.percentile(gray, (5, 95))
+        # Raise baseline white by adding offset and adjusting upper bound
+        t = int(np.clip(t_otsu - 50, lo + 10, hi - 10))
+        return t
+
 
     # ── Tesseract single-character recognition ─────────────────────
 
@@ -166,13 +257,24 @@ class ImageProcessor:
 
     @staticmethod
     def _preprocess_one(gray, rect, idx, crop_dir):
-        """Crop tile, check blank, save crop file.
+        """Crop tile, check blank, save crop + binarised images.
         Returns (idx, rect, crop, is_blank)."""
         crop = ImageProcessor._crop_tile(gray, rect)
         blank = ImageProcessor._is_blank(crop)
 
         crop_path = os.path.join(crop_dir, f"tile_{idx:03d}.png")
         cv2.imwrite(crop_path, crop)
+
+        # Save binarised variants for reference
+        # Find bimodal threshold: detect two peaks in histogram and split at the valley
+        threshold = ImageProcessor._find_bimodal_threshold(crop)
+        # White background (> threshold) → white (255), dark letters (< threshold) → black (0)
+        # _, binary = cv2.threshold(crop, threshold, 255, cv2.THRESH_BINARY)
+        # cv2.imwrite(os.path.join(crop_dir, f"tile_{idx:03d}_bin.png"), binary)
+
+        # kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (2, 2))
+        # dilated = cv2.erode(binary, kernel, iterations=1)
+        # cv2.imwrite(os.path.join(crop_dir, f"tile_{idx:03d}_dil.png"), dilated)
 
         return idx, rect, crop, blank
 
@@ -201,18 +303,14 @@ class ImageProcessor:
 
     # ── Public API ───────────────────────────────────────────────────
 
-    def process(self, output_path="output_boxes.jpg", crop_dir="crops"):
+    def process(self, output_path="output_boxes.jpg", crop_dir="crops-07"):
         # Prepare crop directory
         if os.path.exists(crop_dir):
             shutil.rmtree(crop_dir)
         os.makedirs(crop_dir)
 
-        frame = self.extractor.oak.get_gray()
-        if frame is None:
-            raise RuntimeError("Could not get a frame from the Oak camera")
-
-        gray = frame if len(frame.shape) == 2 else cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        tiles = self.extractor._detect_tiles(gray)
+        
+        tiles, gray = self.extractor.extract()
         print(f"Found {len(tiles)} tiles, preprocessing...")
 
         # ── Step 1: parallel crop + blank check ──────────────────────
