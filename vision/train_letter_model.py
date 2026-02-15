@@ -73,7 +73,8 @@ def main():
         train_sub, val_sub = random_split(train_ds, [n_train, n_val], generator=torch.Generator().manual_seed(42))
         val_subset = Subset(val_ds, val_sub.indices)
     batch_size = min(BATCH_SIZE, max(4, n_train))
-    train_loader = DataLoader(train_sub, batch_size=batch_size, shuffle=True, num_workers=0, pin_memory=True)
+    use_cuda = torch.cuda.is_available()
+    train_loader = DataLoader(train_sub, batch_size=batch_size, shuffle=True, num_workers=0, pin_memory=use_cuda)
     val_loader = DataLoader(val_subset, batch_size=batch_size, shuffle=False, num_workers=0) if n_val > 0 else None
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")

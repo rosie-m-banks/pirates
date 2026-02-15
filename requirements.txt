@@ -2,8 +2,10 @@ opencv-python
 pytesseract
 matplotlib
 depthai
-# TrOCR (letter recognition)
+# Letter CNN (train + inference)
 torch
+torchvision
+# TrOCR (optional)
 transformers
 protobuf
 sentencepiece
