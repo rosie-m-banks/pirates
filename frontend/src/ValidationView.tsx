@@ -10,7 +10,7 @@ const CONSTRUCTION_TYPE_LABELS: Record<string, string> = {
     "make-from-center": "Make from Center",
 };
 
-type SortField = "word" | "type" | "length";
+type SortField = "word" | "type" | "length" | "rank";
 
 interface WordConstruction {
     word: string;
@@ -58,7 +58,7 @@ export default function ValidationView({
     ],
     recommendedWords = {},
 }: GameData) {
-    const [sortField, setSortField] = useState<SortField>("type");
+    const [sortField, setSortField] = useState<SortField>("rank");
     const [sortAsc, setSortAsc] = useState(true);
 
     // Analyze all recommended words and their constructions
@@ -87,6 +87,9 @@ export default function ValidationView({
         sorted.sort((a, b) => {
             let comparison = 0;
             switch (sortField) {
+                case "rank":
+                    comparison = a.backendRank - b.backendRank;
+                    break;
                 case "word":
                     comparison = a.word.localeCompare(b.word);
                     break;
@@ -164,8 +167,14 @@ export default function ValidationView({
                     <table className="w-full border-collapse border-2 border-gray-300">
                         <thead>
                             <tr className="bg-gray-200">
-                                <th className="border border-gray-300 px-4 py-2 text-left" title="Ranking from backend scoring system">
-                                    Rank
+                                <th
+                                    className="border border-gray-300 px-4 py-2 text-left cursor-pointer hover:bg-gray-300"
+                                    onClick={() => handleSort("rank")}
+                                    title="Ranking from backend scoring system"
+                                >
+                                    Rank{" "}
+                                    {sortField === "rank" &&
+                                        (sortAsc ? "↑" : "↓")}
                                 </th>
                                 <th
                                     className="border border-gray-300 px-4 py-2 text-left cursor-pointer hover:bg-gray-300"
