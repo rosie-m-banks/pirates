@@ -22,6 +22,7 @@ You can have multiple images per letter; more (and more varied) is better. Use t
 2. Run `python populate_letter_data.py`: for each crop you'll be shown the image and asked for its letter (A–Z). Images are copied into `letter_data/A`, `letter_data/B`, etc. You can run it again on new crops to add more samples.
 3. Alternatively, create folders `letter_data/A` … `letter_data/Z` and copy/move images from `crops/` into the right folder by hand.
 4. Aim for at least 5–10 images per letter; 20+ per letter gives better accuracy and robustness.
+5. **Synthetic data:** From the `vision` folder run `python augment_synthetic_data.py` to generate extra training images from your existing letter_data (translations, rotations, blur, dots, brightness/contrast). Use `--per-image 8` (default) or higher; synthetic images are saved as `synth_*.png` in the same letter folders.
 
 ## Train
 

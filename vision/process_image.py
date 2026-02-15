@@ -1,4 +1,4 @@
-"""Detect Bananagram tiles and read letters. Prefers LeNet, then LetterCNN, then templates."""
+"""Detect Bananagram tiles and read letters. Prefers letter model (TrOCR), then LeNet, LetterCNN, then templates."""
 
 from extract_tiles import TileExtractor
 import cv2
@@ -8,6 +8,13 @@ import shutil
 from concurrent.futures import ThreadPoolExecutor
 
 from template_recognizer import TemplateRecognizer
+
+try:
+    from letter_model import LetterRecognizer as TrOCRLetterRecognizer
+    _LETTER_MODEL_AVAILABLE = True
+except Exception:
+    TrOCRLetterRecognizer = None
+    _LETTER_MODEL_AVAILABLE = False
 
 try:
     from lenet_letter import LeNetLetterRecognizer, DEFAULT_MODEL_PATH as LENET_PATH
@@ -36,7 +43,13 @@ class ImageProcessor:
         self.extractor = TileExtractor(camera_config)
         self.recognizer = None
         if use_cnn:
-            if _LENET_AVAILABLE and LENET_PATH and os.path.isfile(LENET_PATH):
+            if _LETTER_MODEL_AVAILABLE:
+                try:
+                    self.recognizer = TrOCRLetterRecognizer()
+                    print("ImageProcessor ready (letter model / TrOCR)")
+                except Exception as e:
+                    print(f"Letter model load failed: {e}")
+            if self.recognizer is None and _LENET_AVAILABLE and LENET_PATH and os.path.isfile(LENET_PATH):
                 try:
                     self.recognizer = LeNetLetterRecognizer()
                     print("ImageProcessor ready (LeNet)")

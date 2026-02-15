@@ -11,6 +11,10 @@ MODEL_NAME = "microsoft/trocr-small-printed"
 class LetterRecognizer:
     """Thin wrapper around TrOCR for single-letter classification on GPU."""
 
+    @property
+    def available(self):
+        return self.model is not None
+
     def __init__(self):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.processor, self.model = self._load()
