@@ -9,7 +9,7 @@ import { fetchDefinition } from "./utils/definition";
 import type { GameData } from "./App";
 
 // Color palette for different players (beach/pirate themed)
-const PLAYER_COLORS = [
+export const PLAYER_COLORS = [
     { bg: "#e8b86d", border: "#d4a355", label: "Captain" }, // Gold
     { bg: "#6b9ac4", border: "#4e7ba8", label: "First Mate" }, // Ocean Blue
     { bg: "#c96b6b", border: "#b35454", label: "Quartermaster" }, // Coral Red
