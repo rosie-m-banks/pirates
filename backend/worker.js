@@ -9,6 +9,7 @@ import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { processGameState, letterCounts, normalizeGameData } from './gameState.js';
+import { fuseData, FreeListTracker, WordConfidenceTracker, WordVisibilityTracker } from './dataFusion.js';
 import { sortRecommendations, ScoringConfig } from './recommendationScorer.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -76,6 +77,14 @@ function getFallbackWords() {
 let subsetCache = {};
 /** Last game state (for delta payloads). */
 let lastState = null;
+/** Previous fused state for data fusion (words and availableLetters). */
+let previousFusedState = null;
+/** Free list tracker for persistence tracking. */
+let freeListTracker = new FreeListTracker();
+/** Word confidence tracker for Kalman filter-like confidence tracking. */
+let confidenceTracker = new WordConfidenceTracker();
+/** Word visibility tracker - removes words not seen in last 2 raw VLM calls. */
+let wordVisibilityTracker = new WordVisibilityTracker();
 
 /**
  * Apply delta to last state, or use full payload. Returns payload to pass to processGameState.
@@ -119,8 +128,24 @@ parentPort.on('message', (msg) => {
     const { kind, payload } = msg;
     let result;
     if (kind === 'game-state') {
-      const resolved = applyPayload(payload);
+      // Load dictionary and create Set for fast lookup
       const { words, counts, wordsByFirstAndLength, maxWordLength, frequencies } = loadDictionary();
+      const dictSet = new Set(words);
+      
+      // Apply fusion to clean noisy vision data
+      const fused = fuseData(payload, previousFusedState, dictSet, freeListTracker, confidenceTracker, wordVisibilityTracker);
+      
+      // Update previous fused state for next iteration
+      const { wordsPerPlayer, availableLetters } = normalizeGameData(fused);
+      previousFusedState = {
+        words: wordsPerPlayer.flat(),
+        availableLetters: availableLetters,
+      };
+      
+      // Apply delta logic if needed (for backward compatibility)
+      const resolved = applyPayload(fused);
+      
+
       result = processGameState(resolved, words, counts, { wordsByFirstAndLength, maxWordLength }, subsetCache);
 
       // Sort and filter recommended_words using modular scoring system
