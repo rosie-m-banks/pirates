@@ -12,20 +12,8 @@ interface MoveLogProps {
  */
 export default function MoveLog({ entries, isLoading, error }: MoveLogProps) {
     return (
-        <div
-            className="bg-white rounded-xl p-6 shadow-lg border-4 border-black"
-            style={{ minHeight: "400px" }}
-        >
-            <div className="flex items-center gap-3 mb-4">
-                <h3 className="text-2xl font-bold flex items-center gap-2">
-                    📝 Move Log
-                </h3>
-                <span className="px-3 py-1 bg-blue-100 text-blue-800 text-sm font-semibold rounded-full">
-                    {entries.length} {entries.length === 1 ? "move" : "moves"}
-                </span>
-            </div>
-
-            <div className="space-y-2 max-h-[600px] overflow-y-auto">
+        <div>
+            <div className="space-y-2 max-h-[600px] overflow-y-auto no-scrollbar">
                 {isLoading && (
                     <div className="text-center text-gray-500 py-8">
                         Loading move log...
@@ -47,6 +35,7 @@ export default function MoveLog({ entries, isLoading, error }: MoveLogProps) {
                         <MoveLogEntry
                             key={entry.id}
                             timestamp={entry.timestamp}
+                            playerIndex={entry.playerIndex}
                             studentName={entry.studentName}
                             word={entry.word}
                             frequencyScore={entry.frequencyScore}

@@ -5,6 +5,7 @@ import { getStudentName } from "../TeacherView";
 export interface MoveLogEntry {
     id: string;
     timestamp: number;
+    playerIndex: number;
     studentName: string;
     word: string;
     frequencyScore: number;
@@ -59,8 +60,9 @@ export function useMoveLog(): UseMoveLogReturn {
                                 event.playerIndex ??
                                 0;
                             return {
-                                id: event.id, // Backend now provides this
+                                id: event.id,
                                 timestamp: event.timestamp,
+                                playerIndex,
                                 studentName: getStudentName(playerIndex),
                                 word: event.word,
                                 frequencyScore: event.frequencyScore,
@@ -127,8 +129,9 @@ export function useMoveLog(): UseMoveLogReturn {
                             event.playerIndex ??
                             0;
                         return {
-                            id: event.id, // Backend provides complete entry
+                            id: event.id,
                             timestamp: event.timestamp,
+                            playerIndex,
                             studentName: getStudentName(playerIndex),
                             word: event.word,
                             frequencyScore: event.frequencyScore,

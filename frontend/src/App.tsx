@@ -31,8 +31,21 @@ const socket: Socket = io("http://localhost:3000", {
     autoConnect: false,
 });
 
+const temporaryGameData: GameData = {
+    players: [
+        { words: ["app", "banana", "cherry"] },
+        { words: ["dog", "cat", "bird"] },
+    ],
+    availableLetters: "le",
+    recommendedWords: {
+        apple: ["app", "l", "e"],
+    },
+};
+
 function App() {
-    const [gameData, setGameData] = useState<GameData | null>(null);
+    const [gameData, setGameData] = useState<GameData | null>(
+        temporaryGameData,
+    );
     const [teacherGameData, setTeacherGameData] =
         useState<TeacherGameData | null>(null);
     const [isConnected, setIsConnected] = useState(false);
@@ -141,7 +154,7 @@ function App() {
                                     : "scale(1)",
                         }}
                     >
-                        🎮 Student View
+                        Student View
                     </button>
                     <button
                         onClick={() => setViewMode("validation")}
@@ -161,7 +174,7 @@ function App() {
                                     : "scale(1)",
                         }}
                     >
-                        ✅ Validation View
+                        Validation View
                     </button>
                     <button
                         onClick={() => setViewMode("teacher")}
@@ -178,7 +191,7 @@ function App() {
                                     : "scale(1)",
                         }}
                     >
-                        👨‍🏫 Teacher View
+                        Teacher View
                     </button>
                 </div>
 
