@@ -74,6 +74,18 @@ except Exception as e:
     print(f"[INIT] Hand detector import error: {e}")
     logger.warning(f"Hand detector initialization failed: {e}")
 
+try:
+    from tile_frame_pub import TilePublisher
+    _TILE_PUBLISHER_AVAILABLE = True
+except ImportError as e:
+    TilePublisher = None
+    _TILE_PUBLISHER_AVAILABLE = False
+    logger.warning(f"TilePublisher not available: {e}")
+except Exception as e:
+    TilePublisher = None
+    _TILE_PUBLISHER_AVAILABLE = False
+    logger.warning(f"TilePublisher initialization failed: {e}")
+
 
 class VLMClient:
     """Client for interacting with Claude API."""
@@ -291,6 +303,18 @@ class TileExtractorGUI:
         else:
             print("[INIT] Hand detector not available (import failed or not installed)")
         
+        # Initialize tile publisher if available
+        self.tile_publisher: Optional[TilePublisher] = None
+        self.publisher_running = False
+        self.publisher_thread = None
+        if _TILE_PUBLISHER_AVAILABLE:
+            try:
+                self.tile_publisher = TilePublisher()
+                logger.info("TilePublisher initialized successfully")
+            except Exception as e:
+                logger.warning(f"Failed to initialize TilePublisher: {e}")
+                self.tile_publisher = None
+        
         # Create main window
         self.root = tk.Tk()
         self.root.title("Tile Extractor - VLM")
@@ -411,6 +435,16 @@ class TileExtractorGUI:
         self.last_result: Optional[Dict] = None
         self.backend_url: str = "http://localhost:3000/update-data"
         
+        # Create a dedicated session for update-data requests to avoid connection interference
+        # with the image publisher's requests
+        if _REQUESTS_AVAILABLE:
+            self.data_session = requests.Session()
+            # Set connection pool size to ensure isolation
+            adapter = requests.adapters.HTTPAdapter(pool_connections=1, pool_maxsize=1)
+            self.data_session.mount('http://', adapter)
+        else:
+            self.data_session = None
+        
         # Auto-capture state
         self.auto_capture_running = False
         self.auto_capture_timer = None
@@ -427,6 +461,20 @@ class TileExtractorGUI:
             pady=5
         )
         self.auto_capture_btn.pack(pady=5, fill=tk.X)
+        
+        # Tile publisher button
+        if self.tile_publisher is not None:
+            self.publisher_btn = tk.Button(
+                right_frame,
+                text="Start Tile Publisher (3s)",
+                command=self._toggle_publisher,
+                font=("Arial", 10),
+                bg="#FF5722",
+                fg="white",
+                padx=10,
+                pady=5
+            )
+            self.publisher_btn.pack(pady=5, fill=tk.X)
         
         # Status label
         self.status_label = tk.Label(
@@ -785,13 +833,21 @@ class TileExtractorGUI:
         self.root.update()
         
         try:
-            # Post JSON to backend
-            response = requests.post(
-                self.backend_url,
-                json=backend_data,
-                headers={"Content-Type": "application/json"},
-                timeout=10.0
-            )
+            # Post JSON to backend using dedicated session to avoid interference with image publisher
+            if self.data_session is None:
+                response = requests.post(
+                    self.backend_url,
+                    json=backend_data,
+                    headers={"Content-Type": "application/json"},
+                    timeout=10.0
+                )
+            else:
+                response = self.data_session.post(
+                    self.backend_url,
+                    json=backend_data,
+                    headers={"Content-Type": "application/json"},
+                    timeout=10.0
+                )
             
             # Check response
             response.raise_for_status()
@@ -963,12 +1019,21 @@ class TileExtractorGUI:
                 backend_data = self._transform_to_backend_format(result)
                 
                 try:
-                    response = requests.post(
-                        self.backend_url,
-                        json=backend_data,
-                        headers={"Content-Type": "application/json"},
-                        timeout=10.0
-                    )
+                    # Use dedicated session for update-data requests
+                    if self.data_session is None:
+                        response = requests.post(
+                            self.backend_url,
+                            json=backend_data,
+                            headers={"Content-Type": "application/json"},
+                            timeout=10.0
+                        )
+                    else:
+                        response = self.data_session.post(
+                            self.backend_url,
+                            json=backend_data,
+                            headers={"Content-Type": "application/json"},
+                            timeout=10.0
+                        )
                     response.raise_for_status()
                     logger.info(f"Auto-capture: Posted to backend successfully (Status: {response.status_code})")
                     self.root.after(0, lambda: self.status_label.config(
@@ -990,6 +1055,69 @@ class TileExtractorGUI:
                 text=f"Auto-capture error: {e}. Retrying in 15s..."
             ))
     
+    def _toggle_publisher(self):
+        """Start or stop the tile publisher loop."""
+        if not self.oak:
+            messagebox.showerror("Camera Error", "Oak camera is not available.")
+            return
+        
+        if not self.tile_publisher:
+            messagebox.showerror("Publisher Error", "TilePublisher is not available.")
+            return
+        
+        if self.publisher_running:
+            # Stop publisher
+            self.publisher_running = False
+            if self.publisher_thread and self.publisher_thread.is_alive():
+                # Wait a bit for thread to finish
+                self.publisher_thread.join(timeout=2.0)
+            self.publisher_btn.config(text="Start Tile Publisher (3s)", bg="#FF5722")
+            self.status_label.config(text="Tile publisher stopped.")
+            logger.info("Tile publisher stopped")
+        else:
+            # Start publisher
+            self.publisher_running = True
+            self.publisher_btn.config(text="Stop Tile Publisher", bg="#F44336")
+            self.status_label.config(text="Tile publisher started. Publishing every 3 seconds...")
+            logger.info("Tile publisher started")
+            # Start the publisher loop in a separate thread
+            self.publisher_thread = threading.Thread(target=self._publisher_loop, daemon=True)
+            self.publisher_thread.start()
+    
+    def _publisher_loop(self):
+        """Publisher loop: capture frame and publish to backend."""
+        interval = 3.0  # seconds between captures
+        
+        while self.publisher_running:
+            try:
+                # Get RGB frame from camera (same source as other captures)
+                if self.oak is None:
+                    logger.error("Publisher: Camera not available")
+                    break
+                
+                rgb_frame = self.oak.get_rgb()
+                if rgb_frame is None:
+                    logger.warning("Publisher: Failed to capture frame")
+                    time.sleep(interval)
+                    continue
+                
+                # Convert RGB to BGR for publisher (publisher expects BGR)
+                bgr_frame = cv2.cvtColor(rgb_frame, cv2.COLOR_RGB2BGR)
+                
+                # Publish to backend
+                self.tile_publisher.publish(bgr_frame)
+                
+                logger.info("Publisher: Frame published to backend")
+                
+                # Wait for next cycle
+                time.sleep(interval)
+                
+            except Exception as e:
+                logger.error(f"Publisher loop error: {e}", exc_info=True)
+                time.sleep(interval)
+        
+        logger.info("Publisher loop stopped")
+    
     def run(self):
         """Start the GUI event loop."""
         # Set up window close handler
@@ -999,6 +1127,11 @@ class TileExtractorGUI:
                 self.auto_capture_running = False
                 if self.auto_capture_timer:
                     self.auto_capture_timer.cancel()
+            # Stop publisher if running
+            if self.publisher_running:
+                self.publisher_running = False
+                if self.publisher_thread and self.publisher_thread.is_alive():
+                    self.publisher_thread.join(timeout=2.0)
             # Cleanup
             if self.temp_image_path and os.path.exists(self.temp_image_path):
                 try:
@@ -1008,6 +1141,12 @@ class TileExtractorGUI:
             if self.oak is not None:
                 try:
                     self.oak.close()
+                except:
+                    pass
+            # Cleanup data session
+            if self.data_session is not None:
+                try:
+                    self.data_session.close()
                 except:
                     pass
             self.root.destroy()
@@ -1022,6 +1161,10 @@ class TileExtractorGUI:
                 self.auto_capture_running = False
                 if self.auto_capture_timer:
                     self.auto_capture_timer.cancel()
+            if self.publisher_running:
+                self.publisher_running = False
+                if self.publisher_thread and self.publisher_thread.is_alive():
+                    self.publisher_thread.join(timeout=2.0)
             if self.temp_image_path and os.path.exists(self.temp_image_path):
                 try:
                     os.remove(self.temp_image_path)
@@ -1030,6 +1173,12 @@ class TileExtractorGUI:
             if self.oak is not None:
                 try:
                     self.oak.close()
+                except:
+                    pass
+            # Cleanup data session
+            if self.data_session is not None:
+                try:
+                    self.data_session.close()
                 except:
                     pass
 
