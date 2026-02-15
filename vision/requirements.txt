@@ -1,0 +1,9 @@
+# Core — needed for webcam_feed.py
+opencv-python
+numpy
+openai
+python-dotenv
+
+# OAK-D camera support (optional — only needed if using OAK hardware)
+# depthai
+# pyyaml
