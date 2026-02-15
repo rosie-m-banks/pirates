@@ -36,6 +36,11 @@ export default function StudentView({
         return words.length > 0 ? words[0] : null;
     }, [recommendedWords]);
 
+    // Reset hints when target word changes
+    useEffect(() => {
+        setNumHints(0);
+    }, [targetWord]);
+
     const construction = targetWord ? recommendedWords[targetWord] : [];
 
     // Analyze what type of construction this is
@@ -137,7 +142,7 @@ export default function StudentView({
 
     return (
         <div>
-            <section className="mb-8 flex flex-col items-center gap-4 w-full max-w-3xl">
+            <section className="mb-8 flex flex-col items-center gap-4 w-full">
                 {/* Display all hints accumulated so far */}
                 <div className="flex flex-col gap-3 w-full">
                     <ScrollHint hints={allHints} />
@@ -167,6 +172,8 @@ export default function StudentView({
                     ))}
                 </div>
             </section>
+
+            <WavePattern count={3}></WavePattern>
 
             {players.map((player, playerIndex) => {
                 const colorScheme =
