@@ -1,4 +1,4 @@
-"""Detect Bananagram tiles and read letters. Prefers trained LetterCNN; falls back to templates."""
+"""Detect Bananagram tiles and read letters. Prefers LeNet, then LetterCNN, then templates."""
 
 from extract_tiles import TileExtractor
 import cv2
@@ -10,12 +10,20 @@ from concurrent.futures import ThreadPoolExecutor
 from template_recognizer import TemplateRecognizer
 
 try:
-    from letter_cnn import LetterCNNRecognizer, DEFAULT_MODEL_PATH
-    _CNN_AVAILABLE = True
+    from lenet_letter import LeNetLetterRecognizer, DEFAULT_MODEL_PATH as LENET_PATH
+    _LENET_AVAILABLE = True
+except Exception:
+    LeNetLetterRecognizer = None
+    LENET_PATH = None
+    _LENET_AVAILABLE = False
+
+try:
+    from letter_cnn import LetterCNNRecognizer, DEFAULT_MODEL_PATH as LETTER_CNN_PATH
+    _LETTER_CNN_AVAILABLE = True
 except Exception:
     LetterCNNRecognizer = None
-    DEFAULT_MODEL_PATH = None
-    _CNN_AVAILABLE = False
+    LETTER_CNN_PATH = None
+    _LETTER_CNN_AVAILABLE = False
 
 
 class ImageProcessor:
@@ -27,18 +35,25 @@ class ImageProcessor:
     def __init__(self, camera_config="camera.yaml", use_cnn=True):
         self.extractor = TileExtractor(camera_config)
         self.recognizer = None
-        if use_cnn and _CNN_AVAILABLE and DEFAULT_MODEL_PATH and os.path.isfile(DEFAULT_MODEL_PATH):
-            try:
-                self.recognizer = LetterCNNRecognizer()
-                print("ImageProcessor ready (LetterCNN)")
-            except Exception as e:
-                print(f"CNN load failed: {e}")
+        if use_cnn:
+            if _LENET_AVAILABLE and LENET_PATH and os.path.isfile(LENET_PATH):
+                try:
+                    self.recognizer = LeNetLetterRecognizer()
+                    print("ImageProcessor ready (LeNet)")
+                except Exception as e:
+                    print(f"LeNet load failed: {e}")
+            if self.recognizer is None and _LETTER_CNN_AVAILABLE and LETTER_CNN_PATH and os.path.isfile(LETTER_CNN_PATH):
+                try:
+                    self.recognizer = LetterCNNRecognizer()
+                    print("ImageProcessor ready (LetterCNN)")
+                except Exception as e:
+                    print(f"LetterCNN load failed: {e}")
         if self.recognizer is None:
             self.recognizer = TemplateRecognizer()
             if not self.recognizer.available:
                 print(
                     "No CNN model and no templates. Train: populate vision/letter_data/A..Z and run "
-                    "train_letter_model.py. Or add templates via build_templates.py."
+                    "train_lenet_letter.py or train_letter_model.py. Or add templates via build_templates.py."
                 )
             else:
                 print("ImageProcessor ready (template matching)")

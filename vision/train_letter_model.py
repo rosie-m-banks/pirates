@@ -13,10 +13,10 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_DATA_DIR = os.path.join(SCRIPT_DIR, "letter_data")
 INPUT_SIZE = 64
 BATCH_SIZE = 32
-EPOCHS = 200
+EPOCHS = 500
 LR = 1e-3
 VAL_FRAC = 0.15
-EARLY_STOP_PATIENCE = 35  # stop if no val improvement for this many epochs
+EARLY_STOP_PATIENCE = 70  # stop if no val improvement for this many epochs (reset when LR is reduced)
 
 
 def main():
@@ -80,7 +80,7 @@ def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = LetterCNN(num_classes=NUM_CLASSES).to(device)
     opt = torch.optim.Adam(model.parameters(), lr=args.lr)
-    sched = torch.optim.lr_scheduler.ReduceLROnPlateau(opt, mode="max", factor=0.5, patience=5)
+    sched = torch.optim.lr_scheduler.ReduceLROnPlateau(opt, mode="max", factor=0.5, patience=8, min_lr=1e-6)
     criterion = nn.CrossEntropyLoss()
 
     print(f"Training on {n_train} samples" + (f", validating on {n_val}" if n_val else " (no val split)") + f", batch_size={batch_size}. Classes: {train_ds.classes}")
@@ -120,11 +120,19 @@ def main():
                     correct += (pred == y).sum().item()
                     total += y.size(0)
             val_acc = correct / total if total else 0.0
+            lr_before = opt.param_groups[0]["lr"]
             sched.step(val_acc)
+            if opt.param_groups[0]["lr"] < lr_before:
+                epochs_no_improve = 0
+                print(f"  -> LR reduced to {opt.param_groups[0]['lr']:.2e}, resetting early-stop counter")
             acc = val_acc
         else:
             acc = train_acc
+            lr_before = opt.param_groups[0]["lr"]
             sched.step(train_acc)
+            if opt.param_groups[0]["lr"] < lr_before:
+                epochs_no_improve = 0
+                print(f"  -> LR reduced to {opt.param_groups[0]['lr']:.2e}, resetting early-stop counter")
         if acc > best_acc:
             best_acc = acc
             epochs_no_improve = 0

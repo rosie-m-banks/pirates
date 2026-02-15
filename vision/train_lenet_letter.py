@@ -22,9 +22,10 @@ DEFAULT_DATA_DIR = os.path.join(SCRIPT_DIR, "letter_data")
 DEFAULT_MODEL_PATH = os.path.join(SCRIPT_DIR, "models", "lenet_letter.pt")
 IMAGE_SIZE = 32
 BATCH_SIZE = 32
-EPOCHS = 12
+EPOCHS = 500
 LR = 1e-3
 VAL_FRAC = 0.2
+EARLY_STOP_PATIENCE = 70  # stop if no val improvement for this many epochs
 
 
 # --------------- Preprocessing: optional adaptive threshold ---------------
@@ -118,6 +119,7 @@ def main():
     ap.add_argument("--epochs", type=int, default=EPOCHS)
     ap.add_argument("--lr", type=float, default=LR)
     ap.add_argument("--batch", type=int, default=BATCH_SIZE)
+    ap.add_argument("--patience", type=int, default=EARLY_STOP_PATIENCE, help="Early stop if no val improvement for this many epochs")
     ap.add_argument("--no-adaptive", action="store_true", help="Disable adaptive thresholding (default: on for consistent contrast)")
     args = ap.parse_args()
     use_adaptive = not args.no_adaptive
@@ -158,6 +160,7 @@ def main():
 
     idx_to_class = {v: k for k, v in full_ds.class_to_idx.items()}
     best_val_acc = 0.0
+    epochs_no_improve = 0
 
     for epoch in range(1, args.epochs + 1):
         model.train()
@@ -189,11 +192,16 @@ def main():
         val_acc = val_correct / val_total if val_total else 0.0
         if val_acc >= best_val_acc:
             best_val_acc = val_acc
+            epochs_no_improve = 0
             os.makedirs(os.path.dirname(args.out) or ".", exist_ok=True)
             torch.save(model.state_dict(), args.out)
             print(f"Epoch {epoch}/{args.epochs}  loss={train_loss:.4f}  train_acc={train_acc:.2%}  val_acc={val_acc:.2%}  [saved]")
         else:
+            epochs_no_improve += 1
             print(f"Epoch {epoch}/{args.epochs}  loss={train_loss:.4f}  train_acc={train_acc:.2%}  val_acc={val_acc:.2%}")
+        if epochs_no_improve >= args.patience:
+            print(f"Early stopping (no improvement for {args.patience} epochs).")
+            break
 
     # --------------- Evaluation: per-class accuracy, confusion matrix ---------------
     print("\n--- Evaluation ---")

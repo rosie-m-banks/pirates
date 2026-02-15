@@ -72,13 +72,14 @@ class LetterCNNRecognizer:
 
     @staticmethod
     def _crop_to_tensor(crop, size=INPUT_SIZE):
-        """Crop (H,W) or (H,W,3) -> tensor (1, 1, size, size) in [0,1]."""
+        """Crop -> tensor. Must match train_letter_model: [0,255]->[0,1] then Normalize(0.5,0.5)->[-1,1]."""
         if crop.ndim > 2:
             crop = np.mean(crop, axis=2)
         crop = np.asarray(crop, dtype=np.float32) / 255.0
+        crop = (crop - 0.5) / 0.5
         import cv2
         crop = cv2.resize(crop, (size, size), interpolation=cv2.INTER_LINEAR)
-        t = torch.from_numpy(crop).unsqueeze(0).unsqueeze(0)
+        t = torch.from_numpy(crop.astype(np.float32)).unsqueeze(0).unsqueeze(0)
         return t
 
     def predict_batch(self, crops):
