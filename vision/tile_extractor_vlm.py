@@ -15,6 +15,8 @@ import json
 import base64
 import logging
 import tempfile
+import threading
+import time
 import tkinter as tk
 from tkinter import filedialog, messagebox, scrolledtext
 from pathlib import Path
@@ -56,6 +58,22 @@ except Exception as e:
     _OAK_AVAILABLE = False
     logger.warning(f"Oak camera initialization failed: {e}")
 
+try:
+    from hand_detector import HandDetector
+    _HAND_DETECTOR_AVAILABLE = True
+    print("[INIT] Hand detector module imported successfully")
+except ImportError as e:
+    HandDetector = None
+    _HAND_DETECTOR_AVAILABLE = False
+    print(f"[INIT] Hand detector import failed: {e}")
+    print("[INIT] Install mediapipe with: pip install mediapipe")
+    logger.warning("Hand detector not available. Install mediapipe to use hand detection.")
+except Exception as e:
+    HandDetector = None
+    _HAND_DETECTOR_AVAILABLE = False
+    print(f"[INIT] Hand detector import error: {e}")
+    logger.warning(f"Hand detector initialization failed: {e}")
+
 
 class VLMClient:
     """Client for interacting with Claude API."""
@@ -63,9 +81,9 @@ class VLMClient:
     def __init__(self, api_key: str):
         """Initialize Anthropic client with API key."""
         self.client = Anthropic(api_key=api_key)
-        self.model = "claude-3-5-haiku-20241022"  # Fast and cost-effective
+        self.model = "claude-haiku-4-5-20251001"
     
-    def analyze_board(self, image_path: str, max_size: int = 1024, quality: int = 85) -> Dict:
+    def analyze_board(self, image_path: str, max_size: int = 1024, quality: int = 85, previous_result: Optional[Dict] = None) -> Dict:
         """
         Send image to VLM and get structured analysis.
         
@@ -73,6 +91,7 @@ class VLMClient:
             image_path: Path to image file
             max_size: Maximum dimension (width or height) for resizing (default: 1024)
             quality: JPEG quality for compression (1-100, default: 85)
+            previous_result: Previous analysis result to use as baseline (optional)
         
         Returns:
             Dict with keys: 'player_words', 'free_letters'
@@ -111,16 +130,40 @@ class VLMClient:
         # Use JPEG format
         image_format = 'jpeg'
         
-        prompt = """Analyze this Bananagrams board image. Extract all tiles organized by words and players.
+        # Build prompt with previous result if available
+        prompt = """Analyze this Bananagrams board image. Extract all tiles organized by words, players, and free letters.
 
 Instructions:
-1. Identify all words (tiles connected horizontally or vertically)
+1. Identify all words (tiles connected with each other. Make sure they are real words though, otherwise add to free letters.)
 2. Group words by player based on orientation/side:
-   - Words oriented one way belong to one player
-   - Words oriented differently belong to another player
+   - Words on bottom left side belong to one player
+   - Words on bottom right side belong to another player
+   - Words on top belong to the free list
 3. List free letters (not connected to any word)
 
-Return JSON only:
+"""
+        
+#         # Add previous result context and constraints if available
+#         if previous_result:
+#             previous_json = json.dumps(previous_result, indent=2)
+#             prompt += f"""IMPORTANT CONSTRAINTS - Previous Board State:
+# {previous_json}
+
+# CRITICAL RULES:
+# 1. The board can only change by a few letters more (not decrease) (typically 1-3 letters more. Words can completely scramble and be recombined, but the total number of letters should be within 1-5 letters of prev state if exists)
+# 2. Words CANNOT lose letters - existing words can only:
+#    - Have letters added to them
+#    - Be rescrambled/rearranged (same letters, different order)
+#    - Combine with other words and letters to form a new single word
+# 3. New words can be formed from free letters or by rearranging existing words
+# 4. The total number of letters should remain approximately the same (within 1-3 letters)
+# 5. Use the previous state as a baseline - if a word existed before, it should still exist (possibly rearranged or recombined with another word)
+
+# If applicable, when analyzing, compare against the previous state and ensure changes are minimal and follow these rules.
+
+# """
+        
+        prompt += """Return JSON in this format only. There should be no other data sent:
 {
     "player_words": {
         "player_1": [{"word": "HELLO", "tiles": ["H","E","L","L","O"]}],
@@ -129,7 +172,7 @@ Return JSON only:
     "free_letters": ["A","B","C"]
 }
 
-Be concise. Each tile = single uppercase letter (A-Z). Only include clearly visible tiles."""
+Be concise. Each tile = single uppercase letter (A-Z, repeats are allowed)."""
 
         try:
             import time
@@ -231,6 +274,22 @@ class TileExtractorGUI:
             except Exception as e:
                 logger.warning(f"Failed to initialize Oak camera: {e}")
                 self.oak = None
+        
+        # Initialize hand detector if available
+        self.hand_detector: Optional[HandDetector] = None
+        print(f"[INIT] _HAND_DETECTOR_AVAILABLE = {_HAND_DETECTOR_AVAILABLE}")
+        if _HAND_DETECTOR_AVAILABLE:
+            try:
+                print("[INIT] Attempting to initialize HandDetector...")
+                self.hand_detector = HandDetector()
+                print("[INIT] Hand detector initialized successfully!")
+                logger.info("Hand detector initialized successfully")
+            except Exception as e:
+                print(f"[INIT] Failed to initialize hand detector: {e}")
+                logger.warning(f"Failed to initialize hand detector: {e}")
+                self.hand_detector = None
+        else:
+            print("[INIT] Hand detector not available (import failed or not installed)")
         
         # Create main window
         self.root = tk.Tk()
@@ -350,7 +409,24 @@ class TileExtractorGUI:
         self.post_btn.pack(pady=5, fill=tk.X)
         
         self.last_result: Optional[Dict] = None
-        self.backend_url: str = "http://localhost:3000/update-api"
+        self.backend_url: str = "http://localhost:3000/update-data"
+        
+        # Auto-capture state
+        self.auto_capture_running = False
+        self.auto_capture_timer = None
+        
+        # Auto-capture button
+        self.auto_capture_btn = tk.Button(
+            right_frame,
+            text="Start Auto-Capture (15s)",
+            command=self._toggle_auto_capture,
+            font=("Arial", 10),
+            bg="#4CAF50",
+            fg="white",
+            padx=10,
+            pady=5
+        )
+        self.auto_capture_btn.pack(pady=5, fill=tk.X)
         
         # Status label
         self.status_label = tk.Label(
@@ -392,7 +468,7 @@ class TileExtractorGUI:
             self.load_image(file_path)
     
     def _capture_from_camera(self):
-        """Capture a frame from the Oak camera."""
+        """Capture a frame from the Oak camera, checking for hands and retrying if needed."""
         if self.oak is None:
             messagebox.showerror("Camera Error", "Oak camera is not available.")
             return
@@ -401,20 +477,61 @@ class TileExtractorGUI:
         self.root.update()
         
         try:
-            # Get grayscale frame from camera
-            gray_frame = self.oak.get_gray()
+            # Get RGB frame from camera (for hand detection)
+            rgb_frame = self.oak.get_rgb()
             
-            if gray_frame is None:
+            if rgb_frame is None:
                 messagebox.showerror("Capture Error", "Failed to capture frame from camera.\nCamera may not be ready yet.")
                 self.status_label.config(text="Camera capture failed.")
                 return
             
-            # Convert grayscale to RGB for display (VLM can handle grayscale but RGB is better)
-            # We'll convert to 3-channel for consistency
-            if len(gray_frame.shape) == 2:
-                rgb_frame = cv2.cvtColor(gray_frame, cv2.COLOR_GRAY2RGB)
+            # Check for hands if detector is available - keep retrying until no hand is detected
+            if self.hand_detector is not None:
+                print("[CAPTURE] Hand detector is available, checking for hands...")
+                max_retries = 100  # Safety limit to prevent infinite loop
+                retry_count = 0
+                
+                while retry_count < max_retries:
+                    print(f"[CAPTURE] Checking for hands (attempt {retry_count + 1})...")
+                    has_hands = self.hand_detector.detect_hands(rgb_frame)
+                    print(f"[CAPTURE] Hand detection result: {has_hands}")
+                    
+                    if not has_hands:
+                        print("[CAPTURE] No hand detected, proceeding with capture")
+                        logger.info("No hand detected, proceeding with capture")
+                        self.status_label.config(text="No hand detected, proceeding with capture...")
+                        self.root.update()
+                        break
+                    
+                    # Hand detected, wait and recapture
+                    retry_count += 1
+                    print(f"[CAPTURE] *** HAND DETECTED! Attempt {retry_count}, waiting 1 second and recapturing... ***")
+                    logger.info(f"Hand detected in image (attempt {retry_count}), waiting 1 second and recapturing...")
+                    self.status_label.config(text=f"Hand detected! Waiting 1 second and recapturing... (attempt {retry_count})")
+                    self.root.update()
+                    time.sleep(1.0)
+                    
+                    # Recapture
+                    print(f"[CAPTURE] Recapturing frame...")
+                    rgb_frame = self.oak.get_rgb()
+                    if rgb_frame is None:
+                        print("[CAPTURE] ERROR: Failed to recapture frame")
+                        messagebox.showerror("Capture Error", "Failed to recapture frame from camera.")
+                        self.status_label.config(text="Camera recapture failed.")
+                        return
+                    print(f"[CAPTURE] Frame recaptured, shape: {rgb_frame.shape}")
+                
+                if retry_count >= max_retries:
+                    print(f"[CAPTURE] WARNING: Max retries ({max_retries}) reached, proceeding anyway")
+                    logger.warning(f"Max retries ({max_retries}) reached, proceeding anyway")
+                    self.status_label.config(text=f"Max retries reached, proceeding with capture...")
+                    self.root.update()
             else:
-                rgb_frame = gray_frame
+                print("[CAPTURE] Hand detector is NOT available, skipping hand check")
+            
+            # Convert to RGB if needed (for display)
+            if len(rgb_frame.shape) == 2:
+                rgb_frame = cv2.cvtColor(rgb_frame, cv2.COLOR_GRAY2RGB)
             
             # Save to temporary file
             temp_dir = Path(__file__).parent / "temp"
@@ -493,7 +610,7 @@ class TileExtractorGUI:
         
         try:
             logger.info("Starting VLM analysis")
-            result = self.vlm_client.analyze_board(self.current_image_path)
+            result = self.vlm_client.analyze_board(self.current_image_path, previous_result=self.last_result)
             self._display_results(result)
             self.status_label.config(text="Analysis complete!")
             logger.info("Analysis completed successfully")
@@ -704,12 +821,207 @@ class TileExtractorGUI:
             self.status_label.config(text="Backend post failed.")
             messagebox.showerror("Post Error", error_msg)
     
+    def _toggle_auto_capture(self):
+        """Start or stop automatic capture and analysis."""
+        if not self.oak:
+            messagebox.showerror("Camera Error", "Oak camera is not available.")
+            return
+        
+        if self.auto_capture_running:
+            # Stop auto-capture
+            self.auto_capture_running = False
+            if self.auto_capture_timer:
+                self.auto_capture_timer.cancel()
+                self.auto_capture_timer = None
+            self.auto_capture_btn.config(text="Start Auto-Capture (15s)", bg="#4CAF50")
+            self.status_label.config(text="Auto-capture stopped.")
+            logger.info("Auto-capture stopped")
+        else:
+            # Start auto-capture
+            self.auto_capture_running = True
+            self.auto_capture_btn.config(text="Stop Auto-Capture", bg="#F44336")
+            self.status_label.config(text="Auto-capture started. Capturing every 15 seconds...")
+            logger.info("Auto-capture started")
+            # Start the first cycle immediately
+            self._schedule_next_capture()
+    
+    def _schedule_next_capture(self):
+        """Schedule the next auto-capture cycle."""
+        if not self.auto_capture_running:
+            return
+        
+        # Run the capture cycle in a separate thread to avoid blocking GUI
+        thread = threading.Thread(target=self._auto_capture_cycle, daemon=True)
+        thread.start()
+        
+        # Schedule next capture in 15 seconds
+        self.auto_capture_timer = threading.Timer(15.0, self._schedule_next_capture)
+        self.auto_capture_timer.start()
+    
+    def _auto_capture_cycle(self):
+        """Perform one complete cycle: capture -> analyze -> post."""
+        if not self.auto_capture_running:
+            return
+        
+        try:
+            # Step 1: Capture from camera
+            self.root.after(0, lambda: self.status_label.config(text="Auto-capturing from camera..."))
+            logger.info("Auto-capture: Capturing frame from camera")
+            
+            if self.oak is None:
+                logger.error("Auto-capture: Camera not available")
+                return
+            
+            # Get RGB frame from camera (for hand detection)
+            rgb_frame = self.oak.get_rgb()
+            if rgb_frame is None:
+                logger.warning("Auto-capture: Failed to capture frame")
+                self.root.after(0, lambda: self.status_label.config(text="Auto-capture: Failed to capture frame"))
+                return
+            
+            # Check for hands if detector is available - keep retrying until no hand is detected
+            if self.hand_detector is not None:
+                print("[AUTO-CAPTURE] Hand detector is available, checking for hands...")
+                max_retries = 100  # Safety limit to prevent infinite loop
+                retry_count = 0
+                
+                while retry_count < max_retries:
+                    print(f"[AUTO-CAPTURE] Checking for hands (attempt {retry_count + 1})...")
+                    has_hands = self.hand_detector.detect_hands(rgb_frame)
+                    print(f"[AUTO-CAPTURE] Hand detection result: {has_hands}")
+                    
+                    if not has_hands:
+                        print("[AUTO-CAPTURE] No hand detected, proceeding with capture")
+                        logger.info("Auto-capture: No hand detected, proceeding with capture")
+                        self.root.after(0, lambda: self.status_label.config(text="Auto-capture: No hand detected, proceeding..."))
+                        break
+                    
+                    # Hand detected, wait and recapture
+                    retry_count += 1
+                    print(f"[AUTO-CAPTURE] *** HAND DETECTED! Attempt {retry_count}, waiting 1 second and recapturing... ***")
+                    logger.info(f"Auto-capture: Hand detected in image (attempt {retry_count}), waiting 1 second and recapturing...")
+                    self.root.after(0, lambda c=retry_count: self.status_label.config(text=f"Auto-capture: Hand detected! Waiting 1 second and recapturing... (attempt {c})"))
+                    time.sleep(1.0)
+                    
+                    # Recapture
+                    print(f"[AUTO-CAPTURE] Recapturing frame...")
+                    rgb_frame = self.oak.get_rgb()
+                    if rgb_frame is None:
+                        print("[AUTO-CAPTURE] ERROR: Failed to recapture frame")
+                        logger.warning("Auto-capture: Failed to recapture frame")
+                        self.root.after(0, lambda: self.status_label.config(text="Auto-capture: Failed to recapture frame"))
+                        return
+                    print(f"[AUTO-CAPTURE] Frame recaptured, shape: {rgb_frame.shape}")
+                
+                if retry_count >= max_retries:
+                    print(f"[AUTO-CAPTURE] WARNING: Max retries ({max_retries}) reached, proceeding anyway")
+                    logger.warning(f"Auto-capture: Max retries ({max_retries}) reached, proceeding anyway")
+                    self.root.after(0, lambda: self.status_label.config(text=f"Auto-capture: Max retries reached, proceeding..."))
+            else:
+                print("[AUTO-CAPTURE] Hand detector is NOT available, skipping hand check")
+            
+            # Convert to RGB if needed (for display)
+            if len(rgb_frame.shape) == 2:
+                rgb_frame = cv2.cvtColor(rgb_frame, cv2.COLOR_GRAY2RGB)
+            
+            # Save to temporary file
+            temp_dir = Path(__file__).parent / "temp"
+            temp_dir.mkdir(exist_ok=True)
+            
+            # Clean up old temp file if exists
+            if self.temp_image_path and os.path.exists(self.temp_image_path):
+                try:
+                    os.remove(self.temp_image_path)
+                except:
+                    pass
+            
+            # Save new capture
+            self.temp_image_path = str(temp_dir / "camera_capture.jpg")
+            cv2.imwrite(self.temp_image_path, cv2.cvtColor(rgb_frame, cv2.COLOR_RGB2BGR))
+            
+            # Update GUI with captured image
+            self.root.after(0, lambda: self.load_image(self.temp_image_path))
+            logger.info(f"Auto-capture: Frame saved to {self.temp_image_path}")
+            
+            # Step 2: Analyze with Claude
+            self.root.after(0, lambda: self.status_label.config(text="Auto-capture: Analyzing with Claude..."))
+            logger.info("Auto-capture: Starting VLM analysis")
+            
+            # Get previous result for context (thread-safe access)
+            previous_result = self.last_result
+            result = self.vlm_client.analyze_board(self.temp_image_path, previous_result=previous_result)
+            
+            # Update GUI with results
+            self.root.after(0, lambda: self._display_results(result))
+            logger.info("Auto-capture: Analysis completed")
+            
+            # Step 3: Post to backend
+            if result and _REQUESTS_AVAILABLE:
+                self.root.after(0, lambda: self.status_label.config(text="Auto-capture: Posting to backend..."))
+                logger.info("Auto-capture: Posting to backend")
+                
+                backend_data = self._transform_to_backend_format(result)
+                
+                try:
+                    response = requests.post(
+                        self.backend_url,
+                        json=backend_data,
+                        headers={"Content-Type": "application/json"},
+                        timeout=10.0
+                    )
+                    response.raise_for_status()
+                    logger.info(f"Auto-capture: Posted to backend successfully (Status: {response.status_code})")
+                    self.root.after(0, lambda: self.status_label.config(
+                        text=f"Auto-capture complete! Posted to backend. Next capture in 15s..."
+                    ))
+                except Exception as e:
+                    logger.error(f"Auto-capture: Failed to post to backend: {e}")
+                    self.root.after(0, lambda: self.status_label.config(
+                        text=f"Auto-capture: Analysis complete but post failed. Next capture in 15s..."
+                    ))
+            else:
+                self.root.after(0, lambda: self.status_label.config(
+                    text=f"Auto-capture complete! Next capture in 15s..."
+                ))
+            
+        except Exception as e:
+            logger.error(f"Auto-capture cycle error: {e}", exc_info=True)
+            self.root.after(0, lambda: self.status_label.config(
+                text=f"Auto-capture error: {e}. Retrying in 15s..."
+            ))
+    
     def run(self):
         """Start the GUI event loop."""
+        # Set up window close handler
+        def on_closing():
+            # Stop auto-capture if running
+            if self.auto_capture_running:
+                self.auto_capture_running = False
+                if self.auto_capture_timer:
+                    self.auto_capture_timer.cancel()
+            # Cleanup
+            if self.temp_image_path and os.path.exists(self.temp_image_path):
+                try:
+                    os.remove(self.temp_image_path)
+                except:
+                    pass
+            if self.oak is not None:
+                try:
+                    self.oak.close()
+                except:
+                    pass
+            self.root.destroy()
+        
+        self.root.protocol("WM_DELETE_WINDOW", on_closing)
+        
         try:
             self.root.mainloop()
         finally:
             # Cleanup
+            if self.auto_capture_running:
+                self.auto_capture_running = False
+                if self.auto_capture_timer:
+                    self.auto_capture_timer.cancel()
             if self.temp_image_path and os.path.exists(self.temp_image_path):
                 try:
                     os.remove(self.temp_image_path)
