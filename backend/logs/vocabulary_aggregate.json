@@ -1,0 +1,61 @@
+{
+  "sessionId": "1771156711241",
+  "sessionStart": 1771156711241,
+  "lastUpdate": 1771156951245,
+  "playerStats": {
+    "player_0": {
+      "playerId": "player_0",
+      "totalWords": 22,
+      "totalFrequencyScore": 84.97999999999999,
+      "wordsByFrequency": {
+        "common": 4,
+        "medium": 13,
+        "rare": 5
+      },
+      "firstSeenTimestamp": 1771152135816,
+      "lastSeenTimestamp": 1771156812807,
+      "sessionIds": [
+        "1771152135815"
+      ]
+    },
+    "player_1": {
+      "playerId": "player_1",
+      "totalWords": 14,
+      "totalFrequencyScore": 59.89999999999999,
+      "wordsByFrequency": {
+        "common": 2,
+        "medium": 10,
+        "rare": 2
+      },
+      "firstSeenTimestamp": 1771152135816,
+      "lastSeenTimestamp": 1771156934097,
+      "sessionIds": [
+        "1771152135815"
+      ]
+    }
+  },
+  "wordFrequency": {
+    "faints": 2,
+    "whip": 2,
+    "seas": 2,
+    "air": 2,
+    "nix": 2,
+    "jaw": 2,
+    "ego": 2,
+    "aired": 2,
+    "ion": 3,
+    "fantasia": 2,
+    "eases": 1,
+    "point": 1,
+    "option": 1,
+    "diaper": 1,
+    "axion": 1,
+    "pony": 3,
+    "woe": 1,
+    "and": 2,
+    "woke": 2,
+    "done": 1,
+    "anode": 1
+  },
+  "totalEvents": 43
+}
