@@ -66,13 +66,13 @@ export default function StudentView({
         if (usesAvailableLetters) return "make-from-center";
     }, [targetWord, construction, players, availableLetters]);
 
-    // Generate hint based on current hint level
-    const currentHint = useMemo(() => {
+    // Generate individual hint text for a specific level
+    const getHintText = (level: number): string => {
         if (!targetWord) {
             return "No words available...";
         }
 
-        switch (numHints) {
+        switch (level) {
             case 0:
                 // hint 1: General guidance based on construction type
                 if (constructionType === "add-to-word") {
@@ -119,6 +119,15 @@ export default function StudentView({
                 // Reveal the answer
                 return `The word is "${targetWord.toUpperCase()}" = ${construction.map((p) => p.toUpperCase()).join(" + ")}`;
         }
+    };
+
+    // Generate array of all hints shown so far
+    const allHints = useMemo(() => {
+        const hints: string[] = [];
+        for (let i = 0; i <= numHints; i++) {
+            hints.push(getHintText(i));
+        }
+        return hints;
     }, [numHints, targetWord, construction, constructionType, players]);
 
     // Function to advance to next hint
@@ -150,12 +159,17 @@ export default function StudentView({
                 </h1>
             </header>
 
-            <section className="mb-8 flex flex-col items-center gap-4">
-                <ScrollHint hint={currentHint} width={600} />
+            <section className="mb-8 flex flex-col items-center gap-4 w-full max-w-3xl">
+                {/* Display all hints accumulated so far */}
+                <div className="flex flex-col gap-3 w-full">
+                    <ScrollHint hints={allHints} />
+                </div>
+
+                {/* Button to get next hint */}
                 {targetWord && numHints < 4 && (
                     <button
                         onClick={getNextHint}
-                        className="px-6 py-3 rounded-lg font-bold shadow-[4px_6px_0px_rgba(0,0,0) hover:scale-105 transition-transform"
+                        className="px-6 py-3 rounded-lg font-bold shadow-[4px_6px_0px_rgba(0,0,0)] hover:scale-105 transition-transform"
                         style={{
                             backgroundColor: "#6b9ac4",
                             color: "white",
