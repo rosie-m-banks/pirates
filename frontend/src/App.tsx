@@ -84,13 +84,38 @@ function App() {
             >
                 {isConnected ? "Connected" : "Disconnected"}
             </div>
-            {gameData && (
-                <StudentView
-                    availableLetters={gameData?.availableLetters}
-                    players={gameData.players}
-                    recommendedWords={gameData?.recommendedWords}
-                />
-            )}
+            <div className="min-h-screen flex flex-col items-center justify-start py-12 px-8">
+                <header className="mb-8">
+                    <h1
+                        className="relative text-8xl tracking-wider flex items-center gap-4"
+                        style={{
+                            fontFamily: "FatPix, sans-serif",
+                        }}
+                    >
+                        {/* Shadow layer */}
+                        <span className="absolute top-2 left-2 text-black/60 select-none pointer-events-none">
+                            Pirates
+                        </span>
+
+                        {/* Main text */}
+                        <span
+                            className="relative text-(--ocean-blue)"
+                            style={{ WebkitTextStroke: "4px white" }}
+                        >
+                            Pirates
+                        </span>
+                    </h1>
+                </header>
+
+                {gameData && (
+                    <StudentView
+                        availableLetters={gameData.availableLetters}
+                        players={gameData.players}
+                        recommendedWords={gameData.recommendedWords}
+                    />
+                )}
+                {!gameData && <div>Waiting for words...</div>}
+            </div>
         </>
     );
 }
