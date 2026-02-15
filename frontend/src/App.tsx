@@ -6,9 +6,9 @@ interface Player {
     words: string[];
 }
 
-interface GameData {
+export interface GameData {
     players: Player[];
-    recommended_words: Record<string, string[]>;
+    recommendedWords: Record<string, string[]>;
     availableLetters: string;
 }
 
@@ -57,17 +57,10 @@ function App() {
         ? gameData.availableLetters.toUpperCase().split("")
         : undefined;
 
-    const playerWords =
-        gameData?.players[0]?.words.map((w) => w.toUpperCase()) || undefined;
-
-    const opponentWords =
-        gameData?.players.slice(1).flatMap((p) => p.words) || undefined;
-
-    // Generate hint from recommended words
-    const hint =
-        gameData && Object.keys(gameData.recommended_words).length > 0
-            ? `Hint: You can make "${Object.keys(gameData.recommended_words)[0].toUpperCase()}" from ${gameData.recommended_words[Object.keys(gameData.recommended_words)[0]].map((w) => w.toUpperCase()).join(" + ")}`
-            : undefined;
+    // Map all players with uppercased words
+    const players = gameData?.players.map((player) => ({
+        words: player.words.map((w) => w.toUpperCase()),
+    }));
 
     return (
         <>
@@ -89,9 +82,8 @@ function App() {
             </div>
             <StudentView
                 availableLetters={availableLetters}
-                playerWords={playerWords}
-                opponentWords={opponentWords}
-                hint={hint}
+                players={players}
+                hint={gameData?.recommendedWords}
             />
         </>
     );

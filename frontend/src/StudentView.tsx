@@ -1,17 +1,11 @@
+import { useEffect, useState, useMemo } from "react";
+
 import BeachTile from "./components/BeachTile";
 import WordTile from "./components/WordTile";
 import WavePattern from "./components/WavePattern";
 import ScrollHint from "./components/ScrollHint";
 
-interface Player {
-    words: string[];
-}
-
-interface StudentViewProps {
-    availableLetters?: string[];
-    players?: Player[];
-    hint?: string;
-}
+import type { GameData } from "./App";
 
 // Color palette for different players (beach/pirate themed)
 const PLAYER_COLORS = [
@@ -24,14 +18,114 @@ const PLAYER_COLORS = [
 ];
 
 export default function StudentView({
-    availableLetters = ["A", "B", "C", "D", "E"],
+    availableLetters = "abced",
     players = [
         { words: ["CAT", "BOAT", "HELLO"] },
         { words: ["SHIP", "ANCHOR", "TREASURE"] },
         { words: ["PARROT", "MAP", "GOLD"] },
     ],
-    hint = "Hint #1: There is a three letter word available",
-}: StudentViewProps) {
+    recommendedWords = {},
+}: GameData) {
+    const [numHints, setNumHints] = useState(0);
+
+    const letterList = availableLetters.toUpperCase().split("");
+
+    // Get the first recommended word and its construction
+    const targetWord = useMemo(() => {
+        const words = Object.keys(recommendedWords);
+        return words.length > 0 ? words[0] : null;
+    }, [recommendedWords]);
+
+    const construction = targetWord ? recommendedWords[targetWord] : [];
+
+    // Analyze what type of construction this is
+    const constructionType = useMemo(() => {
+        if (!targetWord || construction.length === 0 || players.length === 0)
+            return null;
+
+        const selfWords = players[0].words;
+        const otherPlayerWords = players.slice(1).flatMap((p) => p.words);
+        const usesOpponentWord = construction.some((part) =>
+            otherPlayerWords.some(
+                (w) => w.toLowerCase() === part.toLowerCase(),
+            ),
+        );
+        const usesSelfWord = construction.some((part) =>
+            selfWords.some((w) => w.toLowerCase() === part.toLowerCase()),
+        );
+
+        const usesAvailableLetters = construction.some(
+            (part) =>
+                part.length === 1 &&
+                availableLetters.toLowerCase().includes(part.toLowerCase()),
+        );
+
+        if (usesSelfWord && usesOpponentWord) return "combine";
+        if (usesSelfWord) return "add-to-word";
+        if (usesOpponentWord) return "steal";
+        if (usesAvailableLetters) return "make-from-center";
+    }, [targetWord, construction, players, availableLetters]);
+
+    // Generate hint based on current hint level
+    const currentHint = useMemo(() => {
+        if (!targetWord) {
+            return "No words available...";
+        }
+
+        switch (numHints) {
+            case 0:
+                // hint 1: General guidance based on construction type
+                if (constructionType === "add-to-word") {
+                    return "You can add letters to one of your existing words!";
+                } else if (constructionType === "steal") {
+                    return "You can combine words from different players!";
+                } else if (constructionType === "make-from-center") {
+                    return "You can make a new word from the available letters!";
+                } else {
+                    return "You can combine your word and an opponent's word!";
+                }
+
+            case 1: {
+                // hint 2: Tell them which word can be changed
+                const sourceWord = construction.find((part) =>
+                    players
+                        .flatMap((p) => p.words)
+                        .some((w) => w.toLowerCase() === part.toLowerCase()),
+                );
+                if (sourceWord) {
+                    return `Try using the word "${sourceWord.toUpperCase()}"`;
+                }
+                return `Try combining: ${construction
+                    .map((p) => p.toUpperCase())
+                    .sort()
+                    .join(", ")}`;
+            }
+
+            case 2:
+                // hint 3: Tell them the length of the final word
+                return `The word you can make is ${targetWord.length} letters long`;
+
+            case 3: {
+                // hint 4: Hangman style - show first and last letter, hide middle
+                const upper = targetWord.toUpperCase();
+                const hangman =
+                    upper[0] +
+                    "_".repeat(upper.length - 2) +
+                    upper[upper.length - 1];
+                return `The word looks like: ${hangman}`;
+            }
+
+            default:
+                // Reveal the answer
+                return `The word is "${targetWord.toUpperCase()}" = ${construction.map((p) => p.toUpperCase()).join(" + ")}`;
+        }
+    }, [numHints, targetWord, construction, constructionType, players]);
+
+    // Function to advance to next hint
+    function getNextHint() {
+        setNumHints((prev) => prev + 1);
+    }
+
     return (
         <div className="min-h-screen flex flex-col items-center justify-start py-12 px-8">
             <header className="mb-8">
@@ -56,17 +150,28 @@ export default function StudentView({
                 </h1>
             </header>
 
-            <section className="mb-8">
-                <ScrollHint hint={hint} width={600} />
-            </section>
-
-            <section className="">
-                <div className=""></div>
+            <section className="mb-8 flex flex-col items-center gap-4">
+                <ScrollHint hint={currentHint} width={600} />
+                {targetWord && numHints < 4 && (
+                    <button
+                        onClick={getNextHint}
+                        className="px-6 py-3 rounded-lg font-bold shadow-lg hover:scale-105 transition-transform"
+                        style={{
+                            backgroundColor: "#6b9ac4",
+                            color: "white",
+                            border: "3px solid #4e7ba8",
+                            fontFamily: "FatPix, sans-serif",
+                            fontSize: "1rem",
+                        }}
+                    >
+                        Need Another Hint?
+                    </button>
+                )}
             </section>
 
             <section className="mb-8">
                 <div className="flex gap-4 justify-center">
-                    {availableLetters.map((letter, i) => (
+                    {letterList.map((letter, i) => (
                         <BeachTile key={i} letter={letter} size="small" />
                     ))}
                 </div>
