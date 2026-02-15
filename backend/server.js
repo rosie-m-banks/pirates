@@ -118,15 +118,42 @@ app.post("/update-image", async (req, res) => {
     }
 });
 
+// GET /analytics — retrieve real-time vocabulary analytics
+app.get("/analytics", async (req, res) => {
+    try {
+        const result = await runWorker("analytics", {});
+        res.json({ ok: true, data: result });
+    } catch (err) {
+        res.status(500).json({ ok: false, error: err.message });
+    }
+});
+
+// GET /analytics/player/:playerId — retrieve vocabulary stats for a specific player
+app.get("/analytics/player/:playerId", async (req, res) => {
+    try {
+        const { playerId } = req.params;
+        const result = await runWorker("player-stats", { playerId });
+        res.json({ ok: true, data: result });
+    } catch (err) {
+        res.status(500).json({ ok: false, error: err.message });
+    }
+});
+
 httpServer.listen(PORT, () => {
     console.log(`Server listening on http://localhost:${PORT}`);
     console.log(
-        "  POST /update-data  - send game state (JSON), broadcast to /receive-data",
+        "  POST /update-data          - send game state (JSON), broadcast to /receive-data",
     );
     console.log(
-        "  POST /update-image - send image update, broadcast to /receive-data",
+        "  POST /update-image         - send image update, broadcast to /receive-data",
     );
     console.log(
-        "  WS   /receive-data - connect to receive broadcasted updates",
+        "  GET  /analytics            - get real-time vocabulary analytics",
+    );
+    console.log(
+        "  GET  /analytics/player/:id - get vocabulary stats for specific player",
+    );
+    console.log(
+        "  WS   /receive-data         - connect to receive broadcasted updates",
     );
 });

@@ -9,14 +9,14 @@
  * Data structure designed for easy migration to database (MongoDB, PostgreSQL, etc.)
  */
 
-import { writeFileSync, readFileSync, existsSync, mkdirSync } from 'fs';
-import { join, dirname } from 'path';
-import { fileURLToPath } from 'url';
+import { writeFileSync, readFileSync, existsSync, mkdirSync } from "fs";
+import { join, dirname } from "path";
+import { fileURLToPath } from "url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const LOG_DIR = join(__dirname, 'logs');
-const STATE_LOG_FILE = join(LOG_DIR, 'player_vocabulary.jsonl'); // JSON Lines format for streaming
-const AGGREGATE_FILE = join(LOG_DIR, 'vocabulary_aggregate.json');
+const LOG_DIR = join(__dirname, "logs");
+const STATE_LOG_FILE = join(LOG_DIR, "player_vocabulary.jsonl"); // JSON Lines format for streaming
+const AGGREGATE_FILE = join(LOG_DIR, "vocabulary_aggregate.json");
 
 // Ensure logs directory exists
 if (!existsSync(LOG_DIR)) {
@@ -27,11 +27,11 @@ if (!existsSync(LOG_DIR)) {
  * Event types for state changes
  */
 export const EventType = {
-    WORD_ADDED: 'word_added',
-    WORD_REMOVED: 'word_removed',
-    WORD_FORMED: 'word_formed',
-    SESSION_START: 'session_start',
-    SESSION_END: 'session_end',
+    WORD_ADDED: "word_added",
+    WORD_REMOVED: "word_removed",
+    WORD_FORMED: "word_formed",
+    SESSION_START: "session_start",
+    SESSION_END: "session_end",
 };
 
 /**
@@ -56,18 +56,26 @@ class VocabularyAggregator {
     loadExistingAggregate() {
         try {
             if (existsSync(AGGREGATE_FILE)) {
-                const data = JSON.parse(readFileSync(AGGREGATE_FILE, 'utf8'));
+                const data = JSON.parse(readFileSync(AGGREGATE_FILE, "utf8"));
                 if (data.wordFrequency) {
-                    this.wordFrequency = new Map(Object.entries(data.wordFrequency));
+                    this.wordFrequency = new Map(
+                        Object.entries(data.wordFrequency),
+                    );
                 }
                 if (data.playerStats) {
                     this.playerStats = new Map(
-                        Object.entries(data.playerStats).map(([id, stats]) => [id, stats])
+                        Object.entries(data.playerStats).map(([id, stats]) => [
+                            id,
+                            stats,
+                        ]),
                     );
                 }
             }
         } catch (err) {
-            console.warn('Could not load existing aggregate data:', err.message);
+            console.warn(
+                "Could not load existing aggregate data:",
+                err.message,
+            );
         }
     }
 
@@ -80,12 +88,11 @@ class VocabularyAggregator {
             this.playerStats.set(playerId, {
                 playerId,
                 totalWords: 0,
-                uniqueWords: new Set(),
-                wordsByLength: {},
+                totalFrequencyScore: 0, // Sum of all frequency scores for avg calculation
                 wordsByFrequency: {
-                    common: 0,    // zipf > 5
-                    medium: 0,    // zipf 3-5
-                    rare: 0,      // zipf < 3
+                    common: 0, // zipf > 5
+                    medium: 0, // zipf 3-5
+                    rare: 0, // zipf < 3
                 },
                 firstSeenTimestamp: Date.now(),
                 lastSeenTimestamp: Date.now(),
@@ -107,7 +114,7 @@ class VocabularyAggregator {
      * @param {object} params.metadata - additional context
      */
     logEvent({
-        playerId = 'player_0',
+        playerId = "player_0",
         word,
         wordLength,
         frequencyScore = 0,
@@ -133,7 +140,7 @@ class VocabularyAggregator {
 
         // Update aggregates
         if (eventType === EventType.WORD_ADDED) {
-            this.updatePlayerStats(playerId, word, wordLength, frequencyScore, timestamp);
+            this.updatePlayerStats(playerId, word, frequencyScore, timestamp);
             this.updateWordFrequency(word);
         }
 
@@ -149,18 +156,14 @@ class VocabularyAggregator {
     /**
      * Update player statistics
      */
-    updatePlayerStats(playerId, word, wordLength, frequencyScore, timestamp) {
+    updatePlayerStats(playerId, word, frequencyScore, timestamp) {
         const stats = this.getPlayerStats(playerId);
 
         stats.totalWords++;
-        stats.uniqueWords.add(word);
         stats.lastSeenTimestamp = timestamp;
 
-        // Track word length distribution
-        if (!stats.wordsByLength[wordLength]) {
-            stats.wordsByLength[wordLength] = 0;
-        }
-        stats.wordsByLength[wordLength]++;
+        // Track total frequency score for average calculation
+        stats.totalFrequencyScore += frequencyScore;
 
         // Track frequency distribution
         if (frequencyScore > 5) {
@@ -187,11 +190,14 @@ class VocabularyAggregator {
         if (this.eventBuffer.length === 0) return;
 
         try {
-            const lines = this.eventBuffer.map(event => JSON.stringify(event)).join('\n') + '\n';
-            writeFileSync(STATE_LOG_FILE, lines, { flag: 'a' });
+            const lines =
+                this.eventBuffer
+                    .map((event) => JSON.stringify(event))
+                    .join("\n") + "\n";
+            writeFileSync(STATE_LOG_FILE, lines, { flag: "a" });
             this.eventBuffer = [];
         } catch (err) {
-            console.error('Failed to write events to log:', err);
+            console.error("Failed to write events to log:", err);
         }
     }
 
@@ -210,9 +216,8 @@ class VocabularyAggregator {
                     id,
                     {
                         ...stats,
-                        uniqueWords: Array.from(stats.uniqueWords),
                     },
-                ])
+                ]),
             ),
             wordFrequency: Object.fromEntries(this.wordFrequency),
             totalEvents: this.getTotalEvents(),
@@ -221,7 +226,7 @@ class VocabularyAggregator {
         try {
             writeFileSync(AGGREGATE_FILE, JSON.stringify(aggregate, null, 2));
         } catch (err) {
-            console.error('Failed to write aggregate data:', err);
+            console.error("Failed to write aggregate data:", err);
         }
     }
 
@@ -231,29 +236,33 @@ class VocabularyAggregator {
      */
     getPlayerVocabularyStats(playerId) {
         const stats = this.getPlayerStats(playerId);
+        const avgWordFrequency =
+            stats.totalWords > 0
+                ? stats.totalFrequencyScore / stats.totalWords
+                : 0;
+
         return {
             playerId: stats.playerId,
             totalWords: stats.totalWords,
-            uniqueWordsCount: stats.uniqueWords.size,
-            vocabularyDiversity: stats.uniqueWords.size / Math.max(1, stats.totalWords),
-            wordsByLength: stats.wordsByLength,
+            avgWordFrequency, // Higher = more common words, Lower = more rare/advanced words
+            vocabularyLevel: this.getVocabularyLevel(avgWordFrequency),
             wordsByFrequency: stats.wordsByFrequency,
-            avgWordLength: this.calculateAvgWordLength(stats.wordsByLength),
             sessionDuration: Date.now() - stats.firstSeenTimestamp,
         };
     }
 
     /**
-     * Calculate average word length for a player
+     * Determine vocabulary level based on average word frequency
+     * Zipf scale: 0 (very rare) to 8 (very common)
+     * @param {number} avgFrequency
+     * @returns {string}
      */
-    calculateAvgWordLength(wordsByLength) {
-        let totalLength = 0;
-        let totalWords = 0;
-        for (const [length, count] of Object.entries(wordsByLength)) {
-            totalLength += parseInt(length) * count;
-            totalWords += count;
-        }
-        return totalWords > 0 ? totalLength / totalWords : 0;
+    getVocabularyLevel(avgFrequency) {
+        if (avgFrequency >= 6) return "beginner"; // Using very common words
+        if (avgFrequency >= 5) return "intermediate"; // Using common words
+        if (avgFrequency >= 4) return "advanced"; // Using less common words
+        if (avgFrequency >= 3) return "expert"; // Using rare words
+        return "master"; // Using very rare/obscure words
     }
 
     /**
@@ -262,11 +271,11 @@ class VocabularyAggregator {
     getTotalEvents() {
         try {
             if (existsSync(STATE_LOG_FILE)) {
-                const content = readFileSync(STATE_LOG_FILE, 'utf8');
-                return content.split('\n').filter(line => line.trim()).length;
+                const content = readFileSync(STATE_LOG_FILE, "utf8");
+                return content.split("\n").filter((line) => line.trim()).length;
             }
         } catch (err) {
-            console.error('Error counting events:', err);
+            console.error("Error counting events:", err);
         }
         return 0;
     }
@@ -275,13 +284,19 @@ class VocabularyAggregator {
      * Get real-time analytics snapshot
      */
     getRealTimeAnalytics() {
-        const players = Array.from(this.playerStats.values()).map(stats => ({
-            playerId: stats.playerId,
-            totalWords: stats.totalWords,
-            uniqueWords: stats.uniqueWords.size,
-            vocabularyDiversity: stats.uniqueWords.size / Math.max(1, stats.totalWords),
-            avgWordLength: this.calculateAvgWordLength(stats.wordsByLength),
-        }));
+        const players = Array.from(this.playerStats.values()).map((stats) => {
+            const avgWordFrequency =
+                stats.totalWords > 0
+                    ? stats.totalFrequencyScore / stats.totalWords
+                    : 0;
+
+            return {
+                playerId: stats.playerId,
+                totalWords: stats.totalWords,
+                avgWordFrequency,
+                vocabularyLevel: this.getVocabularyLevel(avgWordFrequency),
+            };
+        });
 
         return {
             sessionId: this.sessionId,
@@ -289,7 +304,6 @@ class VocabularyAggregator {
             totalPlayers: this.playerStats.size,
             players,
             topWords: this.getTopWords(10),
-            totalUniqueWords: this.wordFrequency.size,
         };
     }
 
@@ -322,13 +336,13 @@ export function getAggregator() {
         }, 30000);
 
         // Save on process exit
-        process.on('exit', () => {
+        process.on("exit", () => {
             if (aggregatorInstance) {
                 aggregatorInstance.saveAggregate();
             }
         });
 
-        process.on('SIGINT', () => {
+        process.on("SIGINT", () => {
             if (aggregatorInstance) {
                 aggregatorInstance.saveAggregate();
             }
@@ -362,4 +376,10 @@ export function getRealTimeAnalytics() {
     return aggregator.getRealTimeAnalytics();
 }
 
-export default { getAggregator, logStateChange, getPlayerStats, getRealTimeAnalytics, EventType };
+export default {
+    getAggregator,
+    logStateChange,
+    getPlayerStats,
+    getRealTimeAnalytics,
+    EventType,
+};

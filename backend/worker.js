@@ -11,6 +11,7 @@ import { dirname, join } from 'path';
 import { processGameState, letterCounts, normalizeGameData } from './gameState.js';
 import { fuseData, FreeListTracker, WordConfidenceTracker, WordVisibilityTracker } from './dataFusion.js';
 import { sortRecommendations, ScoringConfig } from './recommendationScorer.js';
+import { logStateChange, EventType, getAggregator } from './stateLogger.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -85,6 +86,8 @@ let freeListTracker = new FreeListTracker();
 let confidenceTracker = new WordConfidenceTracker();
 /** Word visibility tracker - removes words not seen in last 2 raw VLM calls. */
 let wordVisibilityTracker = new WordVisibilityTracker();
+/** Previous words per player for state change detection. Map<playerIndex, Set<word>> */
+let previousWordsByPlayer = new Map();
 
 /**
  * Apply delta to last state, or use full payload. Returns payload to pass to processGameState.
@@ -106,6 +109,103 @@ function applyPayload(payload) {
   const { wordsPerPlayer, availableLetters } = normalizeGameData(payload);
   lastState = { wordsPerPlayer, availableLetters };
   return payload;
+}
+
+/**
+ * Detect and log word additions/removals per player between states
+ * @param {string[][]} wordsPerPlayer - Current words per player (array of word arrays)
+ * @param {Map<number, Set<string>>} previousWordsByPlayer - Previous words per player
+ * @param {Object} frequencies - Word frequency scores (zipf)
+ * @param {string} availableLetters - Current available letters
+ * @returns {Object} - Summary of changes per player
+ */
+function detectAndLogStateChanges(wordsPerPlayer, previousWordsByPlayer, frequencies, availableLetters) {
+  const changesSummary = {
+    totalAdded: 0,
+    totalRemoved: 0,
+    byPlayer: []
+  };
+
+  // Process each player
+  for (let playerIndex = 0; playerIndex < wordsPerPlayer.length; playerIndex++) {
+    const playerId = `player_${playerIndex}`;
+    const currentWords = wordsPerPlayer[playerIndex] || [];
+    const previousWords = previousWordsByPlayer.get(playerIndex) || new Set();
+
+    const currentSet = new Set(currentWords.map(w => w.toLowerCase()));
+
+    // Detect newly added words for this player
+    const addedWords = currentWords.filter(word => {
+      const normalized = word.toLowerCase();
+      return !previousWords.has(normalized);
+    });
+
+    // Log each added word with metadata
+    for (const word of addedWords) {
+      const normalized = word.toLowerCase();
+      const wordLength = normalized.length;
+      const frequencyScore = frequencies[normalized] || 0;
+      const letterCount = letterCounts(normalized);
+
+      // Determine which letters were likely used
+      const lettersUsed = [];
+      for (let i = 0; i < 26; i++) {
+        if (letterCount[i] > 0) {
+          const letter = String.fromCharCode(97 + i); // 'a' = 97
+          for (let j = 0; j < letterCount[i]; j++) {
+            lettersUsed.push(letter);
+          }
+        }
+      }
+
+      logStateChange({
+        playerId,
+        word: normalized,
+        wordLength,
+        frequencyScore,
+        lettersUsed,
+        eventType: EventType.WORD_ADDED,
+        metadata: {
+          availableLetters,
+          playerIndex,
+          timestamp: Date.now(),
+        },
+      });
+    }
+
+    // Detect removed words (for completeness)
+    const removedWords = Array.from(previousWords).filter(word => !currentSet.has(word));
+    for (const word of removedWords) {
+      logStateChange({
+        playerId,
+        word,
+        wordLength: word.length,
+        frequencyScore: frequencies[word] || 0,
+        lettersUsed: [],
+        eventType: EventType.WORD_REMOVED,
+        metadata: {
+          availableLetters,
+          playerIndex,
+          timestamp: Date.now(),
+        },
+      });
+    }
+
+    changesSummary.totalAdded += addedWords.length;
+    changesSummary.totalRemoved += removedWords.length;
+    changesSummary.byPlayer.push({
+      playerId,
+      playerIndex,
+      addedWords,
+      removedWords,
+      totalWords: currentWords.length
+    });
+
+    // Update previous words for this player
+    previousWordsByPlayer.set(playerIndex, currentSet);
+  }
+
+  return changesSummary;
 }
 
 // Message handler: main thread sends { kind, payload }; we reply with { ok, result } or { ok: false, error }
@@ -131,20 +231,31 @@ parentPort.on('message', (msg) => {
       // Load dictionary and create Set for fast lookup
       const { words, counts, wordsByFirstAndLength, maxWordLength, frequencies } = loadDictionary();
       const dictSet = new Set(words);
-      
+
       // Apply fusion to clean noisy vision data
       const fused = fuseData(payload, previousFusedState, dictSet, freeListTracker, confidenceTracker, wordVisibilityTracker);
-      
+
       // Update previous fused state for next iteration
       const { wordsPerPlayer, availableLetters } = normalizeGameData(fused);
+
+      // Detect and log state changes per player (word additions/removals)
+      const changesSummary = detectAndLogStateChanges(
+        wordsPerPlayer,
+        previousWordsByPlayer,
+        frequencies,
+        availableLetters
+      );
+
+      // Update previous state trackers
       previousFusedState = {
         words: wordsPerPlayer.flat(),
         availableLetters: availableLetters,
       };
-      
+      // Note: previousWordsByPlayer is updated inside detectAndLogStateChanges
+
       // Apply delta logic if needed (for backward compatibility)
       const resolved = applyPayload(fused);
-      
+
 
       result = processGameState(resolved, words, counts, { wordsByFirstAndLength, maxWordLength }, subsetCache);
 
@@ -156,8 +267,21 @@ parentPort.on('message', (msg) => {
           ScoringConfig
         );
       }
+
+      // Attach real-time analytics to result (optional, for debugging/monitoring)
+      result._analytics = {
+        changes: changesSummary,
+        vocabularyStats: getAggregator().getRealTimeAnalytics(),
+      };
     } else if (kind === 'image') {
       result = processImageUpdate(payload);
+    } else if (kind === 'analytics') {
+      // Return real-time vocabulary analytics
+      result = getAggregator().getRealTimeAnalytics();
+    } else if (kind === 'player-stats') {
+      // Return stats for a specific player
+      const { playerId = 'player_0' } = payload;
+      result = getAggregator().getPlayerVocabularyStats(playerId);
     } else {
       result = { type: 'unknown', timestamp: Date.now(), data: payload, processed: false };
     }

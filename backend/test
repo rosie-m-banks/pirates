@@ -1,0 +1,11 @@
+curl --request POST \
+  --url http://localhost:3000/update-data \
+  --header 'Content-Type: application/json' \
+  --header 'User-Agent: insomnia/12.3.1' \
+  --data '{
+  "players": [
+    { "words": ["fantasia", "whip", "air", "nix"] },
+    { "words": ["jaw", "ego", "aired", "into", "eases"] }
+  ],
+  "availableLetters": "oora"
+}'

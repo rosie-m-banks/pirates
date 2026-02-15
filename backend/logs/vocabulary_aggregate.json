@@ -1,0 +1,49 @@
+{
+  "sessionId": "1771152135815",
+  "sessionStart": 1771152135815,
+  "lastUpdate": 1771152195819,
+  "playerStats": {
+    "player_0": {
+      "playerId": "player_0",
+      "totalWords": 5,
+      "totalFrequencyScore": 18.88,
+      "wordsByFrequency": {
+        "common": 1,
+        "medium": 3,
+        "rare": 1
+      },
+      "firstSeenTimestamp": 1771152135816,
+      "lastSeenTimestamp": 1771152135816,
+      "sessionIds": [
+        "1771152135815"
+      ]
+    },
+    "player_1": {
+      "playerId": "player_1",
+      "totalWords": 4,
+      "totalFrequencyScore": 16,
+      "wordsByFrequency": {
+        "common": 0,
+        "medium": 4,
+        "rare": 0
+      },
+      "firstSeenTimestamp": 1771152135816,
+      "lastSeenTimestamp": 1771152135816,
+      "sessionIds": [
+        "1771152135815"
+      ]
+    }
+  },
+  "wordFrequency": {
+    "faints": 1,
+    "whip": 1,
+    "seas": 1,
+    "air": 1,
+    "nix": 1,
+    "jaw": 1,
+    "ego": 1,
+    "aired": 1,
+    "ion": 1
+  },
+  "totalEvents": 9
+}
