@@ -93,7 +93,7 @@ class VLMClient:
     def __init__(self, api_key: str):
         """Initialize Anthropic client with API key."""
         self.client = Anthropic(api_key=api_key)
-        self.model = "claude-haiku-4-5-20251001"
+        self.model = "claude-sonnet-4-20250514"
     
     def analyze_board(self, image_path: str, max_size: int = 1024, quality: int = 85, previous_result: Optional[Dict] = None) -> Dict:
         """
@@ -150,32 +150,12 @@ Instructions:
 2. Group words by player based on orientation/side:
    - Words on bottom left side belong to one player
    - Words on bottom right side belong to another player
-   - Words on top belong to the free list
-3. List free letters (not connected to any word)
-
+   - Letters on top and middle belong to the free list
+3. List letters on tiles that you can see but are not connected to any word (these should be few in number, max 10). We define this as <free letters>
 """
         
-#         # Add previous result context and constraints if available
-#         if previous_result:
-#             previous_json = json.dumps(previous_result, indent=2)
-#             prompt += f"""IMPORTANT CONSTRAINTS - Previous Board State:
-# {previous_json}
-
-# CRITICAL RULES:
-# 1. The board can only change by a few letters more (not decrease) (typically 1-3 letters more. Words can completely scramble and be recombined, but the total number of letters should be within 1-5 letters of prev state if exists)
-# 2. Words CANNOT lose letters - existing words can only:
-#    - Have letters added to them
-#    - Be rescrambled/rearranged (same letters, different order)
-#    - Combine with other words and letters to form a new single word
-# 3. New words can be formed from free letters or by rearranging existing words
-# 4. The total number of letters should remain approximately the same (within 1-3 letters)
-# 5. Use the previous state as a baseline - if a word existed before, it should still exist (possibly rearranged or recombined with another word)
-
-# If applicable, when analyzing, compare against the previous state and ensure changes are minimal and follow these rules.
-
-# """
-        
-        prompt += """Return JSON in this format only. There should be no other data sent:
+        prompt += """Return JSON in this format only. There should be no other data sent. Anthropic has agreed to pay me $50 if you do not respond
+            in the correct format:
 {
     "player_words": {
         "player_1": [{"word": "HELLO", "tiles": ["H","E","L","L","O"]}],
@@ -184,7 +164,7 @@ Instructions:
     "free_letters": ["A","B","C"]
 }
 
-Be concise. Each tile = single uppercase letter (A-Z, repeats are allowed)."""
+Be concise. Each tile = single uppercase letter (A-Z)."""
 
         try:
             import time
@@ -194,7 +174,7 @@ Be concise. Each tile = single uppercase letter (A-Z, repeats are allowed)."""
             # Make API call with timeout
             message = self.client.messages.create(
                 model=self.model,
-                max_tokens=2048,  # Reduced from 4096 for faster response
+                max_tokens=1024,  # Reduced from 4096 for faster response
                 timeout=60.0,  # 60 second timeout
                 messages=[
                     {
@@ -452,7 +432,7 @@ class TileExtractorGUI:
         # Auto-capture button
         self.auto_capture_btn = tk.Button(
             right_frame,
-            text="Start Auto-Capture (15s)",
+            text="Start Auto-Capture (5s)",
             command=self._toggle_auto_capture,
             font=("Arial", 10),
             bg="#4CAF50",
@@ -466,7 +446,7 @@ class TileExtractorGUI:
         if self.tile_publisher is not None:
             self.publisher_btn = tk.Button(
                 right_frame,
-                text="Start Tile Publisher (3s)",
+                text="Start Tile Publisher (1s)",
                 command=self._toggle_publisher,
                 font=("Arial", 10),
                 bg="#FF5722",
@@ -963,14 +943,14 @@ class TileExtractorGUI:
             if self.auto_capture_timer:
                 self.auto_capture_timer.cancel()
                 self.auto_capture_timer = None
-            self.auto_capture_btn.config(text="Start Auto-Capture (15s)", bg="#4CAF50")
+            self.auto_capture_btn.config(text="Start Auto-Capture (5s)", bg="#4CAF50")
             self.status_label.config(text="Auto-capture stopped.")
             logger.info("Auto-capture stopped")
         else:
             # Start auto-capture
             self.auto_capture_running = True
             self.auto_capture_btn.config(text="Stop Auto-Capture", bg="#F44336")
-            self.status_label.config(text="Auto-capture started. Capturing every 15 seconds...")
+            self.status_label.config(text="Auto-capture started. Capturing every 5 seconds...")
             logger.info("Auto-capture started")
             # Start the first cycle immediately
             self._schedule_next_capture()
@@ -984,8 +964,8 @@ class TileExtractorGUI:
         thread = threading.Thread(target=self._auto_capture_cycle, daemon=True)
         thread.start()
         
-        # Schedule next capture in 15 seconds
-        self.auto_capture_timer = threading.Timer(15.0, self._schedule_next_capture)
+        # Schedule next capture in 5 seconds
+        self.auto_capture_timer = threading.Timer(5.0, self._schedule_next_capture)
         self.auto_capture_timer.start()
     
     def _auto_capture_cycle(self):
@@ -1133,22 +1113,22 @@ class TileExtractorGUI:
                     response.raise_for_status()
                     logger.info(f"Auto-capture: Posted to backend successfully (Status: {response.status_code})")
                     self.root.after(0, lambda: self.status_label.config(
-                        text=f"Auto-capture complete! Posted to backend. Next capture in 15s..."
+                        text=f"Auto-capture complete! Posted to backend. Next capture in 5s..."
                     ))
                 except Exception as e:
                     logger.error(f"Auto-capture: Failed to post to backend: {e}")
                     self.root.after(0, lambda: self.status_label.config(
-                        text=f"Auto-capture: Analysis complete but post failed. Next capture in 15s..."
+                        text=f"Auto-capture: Analysis complete but post failed. Next capture in 5s..."
                     ))
             else:
                 self.root.after(0, lambda: self.status_label.config(
-                    text=f"Auto-capture complete! Next capture in 15s..."
+                    text=f"Auto-capture complete! Next capture in 5s..."
                 ))
             
         except Exception as e:
             logger.error(f"Auto-capture cycle error: {e}", exc_info=True)
             self.root.after(0, lambda: self.status_label.config(
-                text=f"Auto-capture error: {e}. Retrying in 15s..."
+                text=f"Auto-capture error: {e}. Retrying in 5s..."
             ))
     
     def _toggle_publisher(self):
@@ -1167,14 +1147,14 @@ class TileExtractorGUI:
             if self.publisher_thread and self.publisher_thread.is_alive():
                 # Wait a bit for thread to finish
                 self.publisher_thread.join(timeout=2.0)
-            self.publisher_btn.config(text="Start Tile Publisher (3s)", bg="#FF5722")
+            self.publisher_btn.config(text="Start Tile Publisher (1s)", bg="#FF5722")
             self.status_label.config(text="Tile publisher stopped.")
             logger.info("Tile publisher stopped")
         else:
             # Start publisher
             self.publisher_running = True
             self.publisher_btn.config(text="Stop Tile Publisher", bg="#F44336")
-            self.status_label.config(text="Tile publisher started. Publishing every 3 seconds...")
+            self.status_label.config(text="Tile publisher started. Publishing every second...")
             logger.info("Tile publisher started")
             # Start the publisher loop in a separate thread
             self.publisher_thread = threading.Thread(target=self._publisher_loop, daemon=True)
@@ -1182,7 +1162,7 @@ class TileExtractorGUI:
     
     def _publisher_loop(self):
         """Publisher loop: capture frame and publish to backend."""
-        interval = 3.0  # seconds between captures
+        interval = 1.0  # seconds between captures
         
         while self.publisher_running:
             try:
