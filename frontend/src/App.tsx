@@ -6,6 +6,14 @@ interface Player {
     words: string[];
 }
 
+// Backend data structure (snake_case from API)
+interface BackendGameData {
+    players: Player[];
+    recommended_words: Record<string, string[]>;
+    availableLetters: string;
+}
+
+// Frontend data structure (camelCase for consistency)
 export interface GameData {
     players: Player[];
     recommendedWords: Record<string, string[]>;
@@ -35,9 +43,15 @@ function App() {
             console.log("Disconnected from socket server");
         }
 
-        function onGameState(data: GameData) {
+        function onGameState(data: BackendGameData) {
             console.log("Received game state:", data);
-            setGameData(data);
+            // Transform backend snake_case to frontend camelCase
+            const transformedData: GameData = {
+                players: data.players,
+                availableLetters: data.availableLetters,
+                recommendedWords: data.recommended_words,
+            };
+            setGameData(transformedData);
         }
 
         socket.on("connect", onConnect);
@@ -51,16 +65,6 @@ function App() {
             socket.disconnect();
         };
     }, []);
-
-    // Extract data for StudentView
-    const availableLetters = gameData?.availableLetters
-        ? gameData.availableLetters.toUpperCase().split("")
-        : undefined;
-
-    // Map all players with uppercased words
-    const players = gameData?.players.map((player) => ({
-        words: player.words.map((w) => w.toUpperCase()),
-    }));
 
     return (
         <>
@@ -80,11 +84,13 @@ function App() {
             >
                 {isConnected ? "Connected" : "Disconnected"}
             </div>
-            <StudentView
-                availableLetters={availableLetters}
-                players={players}
-                hint={gameData?.recommendedWords}
-            />
+            {gameData && (
+                <StudentView
+                    availableLetters={gameData?.availableLetters}
+                    players={gameData.players}
+                    recommendedWords={gameData?.recommendedWords}
+                />
+            )}
         </>
     );
 }

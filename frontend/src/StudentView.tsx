@@ -155,12 +155,11 @@ export default function StudentView({
                 {targetWord && numHints < 4 && (
                     <button
                         onClick={getNextHint}
-                        className="px-6 py-3 rounded-lg font-bold shadow-lg hover:scale-105 transition-transform"
+                        className="px-6 py-3 rounded-lg font-bold shadow-[4px_6px_0px_rgba(0,0,0) hover:scale-105 transition-transform"
                         style={{
                             backgroundColor: "#6b9ac4",
                             color: "white",
                             border: "3px solid #4e7ba8",
-                            fontFamily: "FatPix, sans-serif",
                             fontSize: "1rem",
                         }}
                     >
