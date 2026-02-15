@@ -16,7 +16,7 @@ const STUDENT_NAMES = [
     "Henry",
 ] as const;
 
-function getStudentName(index: number): string {
+export function getStudentName(index: number): string {
     return STUDENT_NAMES[index] || `Student ${index + 1}`;
 }
 

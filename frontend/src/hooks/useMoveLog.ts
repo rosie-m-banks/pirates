@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { getStudentName } from "../constants/teacher";
+import { getStudentName } from "../TeacherView";
 
 export interface MoveLogEntry {
     id: string;
@@ -42,7 +42,9 @@ export function useMoveLog(): UseMoveLogReturn {
         const fetchLog = async () => {
             try {
                 setIsLoading(true);
-                const response = await fetch("http://localhost:3000/analytics/move-log");
+                const response = await fetch(
+                    "http://localhost:3000/analytics/move-log",
+                );
                 const data = await response.json();
 
                 if (data.ok && data.data.events) {
@@ -56,7 +58,7 @@ export function useMoveLog(): UseMoveLogReturn {
                                 word: event.word,
                                 frequencyScore: event.frequencyScore,
                             };
-                        }
+                        },
                     );
 
                     setMoveLog(entries);
@@ -76,26 +78,29 @@ export function useMoveLog(): UseMoveLogReturn {
     /**
      * Add new moves to the log (deduplicates automatically)
      */
-    const addMoves = useCallback((entries: MoveLogEntry[]) => {
-        const newEntries: MoveLogEntry[] = [];
-        const newIds: string[] = [];
+    const addMoves = useCallback(
+        (entries: MoveLogEntry[]) => {
+            const newEntries: MoveLogEntry[] = [];
+            const newIds: string[] = [];
 
-        entries.forEach((entry) => {
-            if (!seenMoveIds.has(entry.id)) {
-                newEntries.push(entry);
-                newIds.push(entry.id);
-            }
-        });
-
-        if (newEntries.length > 0) {
-            setMoveLog((prev) => [...newEntries, ...prev]);
-            setSeenMoveIds((prev) => {
-                const updated = new Set(prev);
-                newIds.forEach((id) => updated.add(id));
-                return updated;
+            entries.forEach((entry) => {
+                if (!seenMoveIds.has(entry.id)) {
+                    newEntries.push(entry);
+                    newIds.push(entry.id);
+                }
             });
-        }
-    }, [seenMoveIds]);
+
+            if (newEntries.length > 0) {
+                setMoveLog((prev) => [...newEntries, ...prev]);
+                setSeenMoveIds((prev) => {
+                    const updated = new Set(prev);
+                    newIds.forEach((id) => updated.add(id));
+                    return updated;
+                });
+            }
+        },
+        [seenMoveIds],
+    );
 
     return {
         moveLog,
