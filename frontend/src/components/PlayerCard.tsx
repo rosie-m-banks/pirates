@@ -26,7 +26,8 @@ export default function PlayerCard({
             style={{
                 backgroundColor: colorScheme.bg + "22",
                 borderColor: colorScheme.border,
-                borderLeftWidth: "6px",
+                borderBottomWidth: "6px",
+                borderBottomColor: colorScheme.border,
                 borderLeftColor: colorScheme.border,
             }}
         >
@@ -51,14 +52,9 @@ export default function PlayerCard({
                 )}
             </div>
 
-            <div className="grid grid-cols-3 gap-4 text-center">
+            <div className="grid grid-cols-3 gap-4 text-center text-gray-700">
                 <div>
-                    <div
-                        className="text-3xl font-bold"
-                        style={{ color: "#6b9ac4" }}
-                    >
-                        {currentWords}
-                    </div>
+                    <div className="text-3xl font-bold">{currentWords}</div>
                     <div
                         className="text-sm font-semibold"
                         style={{ color: "var(--wave-color)" }}
@@ -67,10 +63,7 @@ export default function PlayerCard({
                     </div>
                 </div>
                 <div>
-                    <div
-                        className="text-3xl font-bold"
-                        style={{ color: "#7bc47b" }}
-                    >
+                    <div className="text-3xl font-bold">
                         {stats?.totalWords || 0}
                     </div>
                     <div
@@ -81,10 +74,7 @@ export default function PlayerCard({
                     </div>
                 </div>
                 <div>
-                    <div
-                        className="text-3xl font-bold"
-                        style={{ color: "#b584c4" }}
-                    >
+                    <div className="text-3xl font-bold">
                         {stats?.avgWordFrequency.toFixed(1) || "0.0"}
                     </div>
                     <div

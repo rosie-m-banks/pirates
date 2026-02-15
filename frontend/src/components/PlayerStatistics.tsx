@@ -16,14 +16,11 @@ export default function PlayerStatistics({
     getStudentName,
 }: PlayerStatisticsProps) {
     return (
-        <div
-            className="rounded-lg p-6 shadow-[4px_6px_0px_rgba(0,0,0)] border-4 border-black"
-            style={{ minHeight: "400px", backgroundColor: "var(--scroll-tan)" }}
-        >
-            <h3 className="text-2xl font-bold mb-4 flex items-center gap-2">
-                Student Statistics
-            </h3>
-            <div className="space-y-4 max-h-[600px] overflow-y-auto">
+        <div>
+            <div className="pb-3 font-bold text-[var(--wave-color)]">
+                Students:{" "}
+            </div>
+            <div className="flex flex-row gap-3">
                 {players.map((player, index) => (
                     <PlayerCard
                         key={index}
