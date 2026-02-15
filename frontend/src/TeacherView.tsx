@@ -29,34 +29,15 @@ interface TeacherViewProps {
  *
  * Features:
  * - Full move log loaded from backend (single source of truth)
- * - Real-time updates via WebSocket
- * - Automatic deduplication of moves
+ * - Real-time updates via dedicated WebSocket event ('move-log')
+ * - Backend handles all log logic; frontend only displays
  * - Player statistics and vocabulary levels
  */
 export default function TeacherView({ gameData }: TeacherViewProps) {
-    const { moveLog, addMoves, isLoading, error } = useMoveLog();
+    const { moveLog, isLoading, error } = useMoveLog();
     const [playerStats, setPlayerStats] = useState<Map<number, PlayerStats>>(
         new Map(),
     );
-
-    // Process new moves from game data
-    useEffect(() => {
-        if (!gameData.move) return;
-
-        const newEntries = gameData.move.players.flatMap((player) =>
-            player.addedWords.map((wordPlay) => ({
-                id: `${gameData.move!.timestamp}-${player.playerIndex}-${wordPlay.word}`,
-                timestamp: gameData.move!.timestamp,
-                studentName: getStudentName(player.playerIndex),
-                word: wordPlay.word,
-                frequencyScore: wordPlay.frequencyScore,
-            })),
-        );
-
-        if (newEntries.length > 0) {
-            addMoves(newEntries);
-        }
-    }, [gameData.move, addMoves]);
 
     // Update player statistics from analytics
     useEffect(() => {

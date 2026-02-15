@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { io, Socket } from "socket.io-client";
 import { getStudentName } from "../TeacherView";
 
 export interface MoveLogEntry {
@@ -10,10 +11,12 @@ export interface MoveLogEntry {
 }
 
 interface BackendLogEvent {
+    id: string; // Backend now provides this
     sessionId: string;
     timestamp: number;
     eventType: string;
     playerId: string;
+    playerIndex: number;
     word: string;
     frequencyScore: number;
     metadata: {
@@ -48,18 +51,21 @@ export function useMoveLog(): UseMoveLogReturn {
                 const data = await response.json();
 
                 if (data.ok && data.data.events) {
-                    const entries: MoveLogEntry[] = data.data.events.map(
-                        (event: BackendLogEvent) => {
-                            const playerIndex = event.metadata.playerIndex ?? 0;
+                    const entries: MoveLogEntry[] = data.data.events
+                        .reverse()
+                        .map((event: BackendLogEvent) => {
+                            const playerIndex =
+                                event.metadata?.playerIndex ??
+                                event.playerIndex ??
+                                0;
                             return {
-                                id: `${event.timestamp}-${event.playerId}-${event.word}`,
+                                id: event.id, // Backend now provides this
                                 timestamp: event.timestamp,
                                 studentName: getStudentName(playerIndex),
                                 word: event.word,
                                 frequencyScore: event.frequencyScore,
                             };
-                        },
-                    );
+                        });
 
                     setMoveLog(entries);
                     setSeenMoveIds(new Set(entries.map((e) => e.id)));
@@ -101,6 +107,50 @@ export function useMoveLog(): UseMoveLogReturn {
         },
         [seenMoveIds],
     );
+
+    // Listen to dedicated move-log WebSocket event for real-time updates
+    useEffect(() => {
+        const socket: Socket = io("http://localhost:3000", {
+            path: "/receive-data",
+        });
+
+        socket.on("connect", () => {
+            console.log("Connected to move-log WebSocket");
+        });
+
+        socket.on("move-log", (data: { entries: BackendLogEvent[] }) => {
+            if (data.entries && data.entries.length > 0) {
+                const newEntries: MoveLogEntry[] = data.entries.map(
+                    (event: BackendLogEvent) => {
+                        const playerIndex =
+                            event.metadata?.playerIndex ??
+                            event.playerIndex ??
+                            0;
+                        return {
+                            id: event.id, // Backend provides complete entry
+                            timestamp: event.timestamp,
+                            studentName: getStudentName(playerIndex),
+                            word: event.word,
+                            frequencyScore: event.frequencyScore,
+                        };
+                    },
+                );
+                addMoves(newEntries);
+            }
+        });
+
+        socket.on("disconnect", () => {
+            console.log("Disconnected from move-log WebSocket");
+        });
+
+        socket.on("error", (err) => {
+            console.error("WebSocket error:", err);
+        });
+
+        return () => {
+            socket.disconnect();
+        };
+    }, [addMoves]);
 
     return {
         moveLog,

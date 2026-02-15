@@ -25,7 +25,7 @@ export default function MoveLog({ entries, isLoading, error }: MoveLogProps) {
                 </span>
             </div>
 
-            <div className="space-y-2 max-h-[600px] overflow-y-auto flex flex-col-reverse">
+            <div className="space-y-2 max-h-[600px] overflow-y-auto">
                 {isLoading && (
                     <div className="text-center text-gray-500 py-8">
                         Loading move log...

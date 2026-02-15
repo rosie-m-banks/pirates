@@ -5,7 +5,7 @@ curl --request POST \
   --data '{
   "players": [
     { "words": [] },
-    { "words": [] }
+    { "words": ["anode"] }
   ],
-  "availableLetters": "pnyo"
+  "availableLetters": "qddke"
 }'

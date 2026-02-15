@@ -4,22 +4,6 @@
 
 import type { GameData } from "../App";
 
-export interface WordPlay {
-    word: string;
-    frequencyScore: number;
-}
-
-export interface MoveData {
-    timestamp: number;
-    players: {
-        playerId: string;
-        playerIndex: number;
-        addedWords: WordPlay[];
-        removedWords: string[];
-        totalWords: number;
-    }[];
-}
-
 export interface Player {
     words: string[];
 }
@@ -38,6 +22,5 @@ export interface AnalyticsData {
 }
 
 export interface TeacherGameData extends GameData {
-    move?: MoveData;
     _analytics?: AnalyticsData;
 }
