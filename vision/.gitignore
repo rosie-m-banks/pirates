@@ -1,0 +1,4 @@
+models/*
+__pycache__/*
+crops/*
+secret.txt

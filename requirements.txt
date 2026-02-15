@@ -1,0 +1,11 @@
+opencv-python
+pytesseract
+matplotlib
+depthai
+# Letter CNN (train + inference)
+torch
+torchvision
+# TrOCR (optional)
+transformers
+protobuf
+sentencepiece
