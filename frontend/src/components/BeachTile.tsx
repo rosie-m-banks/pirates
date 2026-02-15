@@ -20,7 +20,7 @@ export default function BeachTile({ letter, size = "small" }: BeachTileProps) {
                 fill="none"
                 xmlns="http://www.w3.org/2000/svg"
                 style={{
-                    WebkitFilter: "drop-shadow( 3px 3px 0px rgba(0, 0, 0));",
+                    WebkitFilter: "drop-shadow( 3px 3px 0px rgba(0, 0, 0))",
                     filter: "drop-shadow( 3px 3px 0px rgba(0, 0, 0, 1))",
                 }}
             >

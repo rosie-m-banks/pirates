@@ -36,6 +36,11 @@ export default function StudentView({
         return words.length > 0 ? words[0] : null;
     }, [recommendedWords]);
 
+    // Reset hints when target word changes
+    useEffect(() => {
+        setNumHints(0);
+    }, [targetWord]);
+
     const construction = targetWord ? recommendedWords[targetWord] : [];
 
     // Analyze what type of construction this is
@@ -66,13 +71,13 @@ export default function StudentView({
         if (usesAvailableLetters) return "make-from-center";
     }, [targetWord, construction, players, availableLetters]);
 
-    // Generate hint based on current hint level
-    const currentHint = useMemo(() => {
+    // Generate individual hint text for a specific level
+    const getHintText = (level: number): string => {
         if (!targetWord) {
             return "No words available...";
         }
 
-        switch (numHints) {
+        switch (level) {
             case 0:
                 // hint 1: General guidance based on construction type
                 if (constructionType === "add-to-word") {
@@ -119,6 +124,15 @@ export default function StudentView({
                 // Reveal the answer
                 return `The word is "${targetWord.toUpperCase()}" = ${construction.map((p) => p.toUpperCase()).join(" + ")}`;
         }
+    };
+
+    // Generate array of all hints shown so far
+    const allHints = useMemo(() => {
+        const hints: string[] = [];
+        for (let i = 0; i <= numHints; i++) {
+            hints.push(getHintText(i));
+        }
+        return hints;
     }, [numHints, targetWord, construction, constructionType, players]);
 
     // Function to advance to next hint
@@ -127,35 +141,18 @@ export default function StudentView({
     }
 
     return (
-        <div className="min-h-screen flex flex-col items-center justify-start py-12 px-8">
-            <header className="mb-8">
-                <h1
-                    className="relative text-8xl tracking-wider flex items-center gap-4"
-                    style={{
-                        fontFamily: "FatPix, sans-serif",
-                    }}
-                >
-                    {/* Shadow layer */}
-                    <span className="absolute top-2 left-2 text-black/60 select-none pointer-events-none">
-                        Pirates
-                    </span>
+        <div>
+            <section className="mb-8 flex flex-col items-center gap-4 w-full">
+                {/* Display all hints accumulated so far */}
+                <div className="flex flex-col gap-3 w-full">
+                    <ScrollHint hints={allHints} />
+                </div>
 
-                    {/* Main text */}
-                    <span
-                        className="relative text-(--ocean-blue)"
-                        style={{ WebkitTextStroke: "4px white" }}
-                    >
-                        Pirates
-                    </span>
-                </h1>
-            </header>
-
-            <section className="mb-8 flex flex-col items-center gap-4">
-                <ScrollHint hint={currentHint} width={600} />
+                {/* Button to get next hint */}
                 {targetWord && numHints < 4 && (
                     <button
                         onClick={getNextHint}
-                        className="px-6 py-3 rounded-lg font-bold shadow-[4px_6px_0px_rgba(0,0,0) hover:scale-105 transition-transform"
+                        className="px-6 py-3 rounded-lg font-bold shadow-[4px_6px_0px_rgba(0,0,0)] hover:scale-105 transition-transform"
                         style={{
                             backgroundColor: "#6b9ac4",
                             color: "white",
@@ -175,6 +172,8 @@ export default function StudentView({
                     ))}
                 </div>
             </section>
+
+            <WavePattern count={3}></WavePattern>
 
             {players.map((player, playerIndex) => {
                 const colorScheme =
