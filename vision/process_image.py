@@ -1,9 +1,4 @@
-"""Detect Bananagram tiles and read letters via template matching only.
-
-Templates (A.png through Z.png) must be built from your actual tiles using
-build_templates.py. No OCR models; same normalization for every crop and
-template so recognition is consistent.
-"""
+"""Detect Bananagram tiles and read letters. Prefers trained LetterCNN; falls back to templates."""
 
 from extract_tiles import TileExtractor
 import cv2
@@ -14,23 +9,39 @@ from concurrent.futures import ThreadPoolExecutor
 
 from template_recognizer import TemplateRecognizer
 
+try:
+    from letter_cnn import LetterCNNRecognizer, DEFAULT_MODEL_PATH
+    _CNN_AVAILABLE = True
+except Exception:
+    LetterCNNRecognizer = None
+    DEFAULT_MODEL_PATH = None
+    _CNN_AVAILABLE = False
+
 
 class ImageProcessor:
-    """Detects tiles, classifies letters by matching to templates (A–Z from your tiles)."""
+    """Detects tiles, classifies letters with CNN (if trained) or template matching."""
 
     BLACK_PIXEL_THRESH = 0.02
     INK_THRESHOLD = 140
 
-    def __init__(self, camera_config="camera.yaml"):
+    def __init__(self, camera_config="camera.yaml", use_cnn=True):
         self.extractor = TileExtractor(camera_config)
-        self.recognizer = TemplateRecognizer()
-        if not self.recognizer.available:
-            print(
-                "No templates in vision/templates/. Crops will be saved; run "
-                "build_templates.py to label them, then run process_image.py again."
-            )
-        else:
-            print("ImageProcessor ready (template matching)")
+        self.recognizer = None
+        if use_cnn and _CNN_AVAILABLE and DEFAULT_MODEL_PATH and os.path.isfile(DEFAULT_MODEL_PATH):
+            try:
+                self.recognizer = LetterCNNRecognizer()
+                print("ImageProcessor ready (LetterCNN)")
+            except Exception as e:
+                print(f"CNN load failed: {e}")
+        if self.recognizer is None:
+            self.recognizer = TemplateRecognizer()
+            if not self.recognizer.available:
+                print(
+                    "No CNN model and no templates. Train: populate vision/letter_data/A..Z and run "
+                    "train_letter_model.py. Or add templates via build_templates.py."
+                )
+            else:
+                print("ImageProcessor ready (template matching)")
 
     @staticmethod
     def _order_points(pts):
@@ -128,15 +139,15 @@ class ImageProcessor:
         print(f"  {blank_count} blank, {len(non_blank)} to classify")
 
         ocr_map = {}
-        if non_blank and self.recognizer.available:
+        if non_blank and self.recognizer is not None and self.recognizer.available:
             crops = [crop for _idx, _rect, crop in non_blank]
-            print(f"  Matching {len(crops)} tiles to templates...")
+            print(f"  Classifying {len(crops)} tiles...")
             results_list = self.recognizer.predict_batch(crops)
             for (idx, _rect, _crop), (letter, conf) in zip(non_blank, results_list):
                 if letter is not None:
                     ocr_map[idx] = letter
-        elif non_blank and not self.recognizer.available:
-            print("  Skipping letter recognition (no templates).")
+        elif non_blank:
+            print("  Skipping letter recognition (no model/templates).")
 
         results = []
         for idx, rect, _crop, blank in preprocessed:

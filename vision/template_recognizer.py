@@ -13,11 +13,11 @@ import numpy as np
 DEFAULT_TEMPLATE_DIR = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "templates"
 )
-TEMPLATE_SIZE = 96   # larger = more discriminative (was 64)
+TEMPLATE_SIZE = 96
 LETTER_ROI_FRAC = 0.70
-MIN_MATCH_SCORE = 0.52   # reject weak matches
-# Winner must beat second-best by this much (stops "everything is O")
-MIN_WINNER_MARGIN = 0.07
+MIN_MATCH_SCORE = 0.44   # accept when correlation is decent
+# Winner must beat second-best by this much (stops "everything is O", but not too strict)
+MIN_WINNER_MARGIN = 0.03
 
 
 def _letter_roi(img, center_frac=LETTER_ROI_FRAC):
@@ -30,16 +30,10 @@ def _letter_roi(img, center_frac=LETTER_ROI_FRAC):
 
 
 def _binarize_same_conv(roi):
-    """Binarize; letter=black (0), background=white (255). Use adaptive then
-    enforce convention so template and crop are comparable."""
+    """Otsu binarize; letter=black (0), background=white (255). Same for template and crop."""
     if roi.ndim > 2:
         roi = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
-    h, w = roi.shape[:2]
-    block = min(31, (min(h, w) // 4) | 1)
-    binary = cv2.adaptiveThreshold(
-        roi, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-        cv2.THRESH_BINARY, block, 8
-    )
+    _, binary = cv2.threshold(roi, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
     if np.mean(binary) < 127:
         binary = 255 - binary
     return binary
