@@ -2,8 +2,10 @@ import { useEffect, useState } from "react";
 import { io, Socket } from "socket.io-client";
 import StudentView from "./StudentView";
 import ValidationView from "./ValidationView";
+import TeacherView from "./TeacherView";
+import type { TeacherGameData } from "./types/teacher";
 
-type ViewMode = "student" | "validation";
+type ViewMode = "student" | "validation" | "teacher";
 
 interface Player {
     words: string[];
@@ -31,6 +33,7 @@ const socket: Socket = io("http://localhost:3000", {
 
 function App() {
     const [gameData, setGameData] = useState<GameData | null>(null);
+    const [teacherGameData, setTeacherGameData] = useState<TeacherGameData | null>(null);
     const [isConnected, setIsConnected] = useState(false);
     const [viewMode, setViewMode] = useState<ViewMode>("student");
 
@@ -47,15 +50,24 @@ function App() {
             console.log("Disconnected from socket server");
         }
 
-        function onGameState(data: BackendGameData) {
+        function onGameState(data: any) {
             console.log("Received game state:", data);
-            // Transform backend snake_case to frontend camelCase
+
+            // Transform backend snake_case to frontend camelCase for basic views
             const transformedData: GameData = {
                 players: data.players,
                 availableLetters: data.availableLetters,
                 recommendedWords: data.recommended_words,
             };
             setGameData(transformedData);
+
+            // Store full data including move and analytics for teacher view
+            const teacherData: TeacherGameData = {
+                ...transformedData,
+                move: data.move,
+                _analytics: data._analytics,
+            };
+            setTeacherGameData(teacherData);
         }
 
         socket.on("connect", onConnect);
@@ -139,6 +151,19 @@ function App() {
                     >
                         ✅ Validation View
                     </button>
+                    <button
+                        onClick={() => setViewMode("teacher")}
+                        className="px-6 py-3 rounded-lg font-bold shadow-[4px_6px_0px_rgba(0,0,0)] transition-all"
+                        style={{
+                            backgroundColor: viewMode === "teacher" ? "#6b9ac4" : "#e5e7eb",
+                            color: viewMode === "teacher" ? "white" : "#6b7280",
+                            border: `3px solid ${viewMode === "teacher" ? "#4e7ba8" : "#d1d5db"}`,
+                            fontSize: "1.1rem",
+                            transform: viewMode === "teacher" ? "scale(1.05)" : "scale(1)",
+                        }}
+                    >
+                        👨‍🏫 Teacher View
+                    </button>
                 </div>
 
                 {gameData && viewMode === "student" && (
@@ -154,6 +179,9 @@ function App() {
                         players={gameData.players}
                         recommendedWords={gameData.recommendedWords}
                     />
+                )}
+                {teacherGameData && viewMode === "teacher" && (
+                    <TeacherView gameData={teacherGameData} />
                 )}
                 {!gameData && <div>Waiting for words...</div>}
             </div>

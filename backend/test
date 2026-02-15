@@ -4,8 +4,8 @@ curl --request POST \
   --header 'User-Agent: insomnia/12.3.1' \
   --data '{
   "players": [
-    { "words": ["fantasia", "whip", "air", "nix"] },
-    { "words": ["jaw", "ego", "aired", "into", "eases"] }
+    { "words": [] },
+    { "words": [] }
   ],
-  "availableLetters": "oora"
+  "availableLetters": "pnyo"
 }'

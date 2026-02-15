@@ -1,49 +1,59 @@
 {
-  "sessionId": "1771152135815",
-  "sessionStart": 1771152135815,
-  "lastUpdate": 1771152195819,
+  "sessionId": "1771155272190",
+  "sessionStart": 1771155272190,
+  "lastUpdate": 1771155392198,
   "playerStats": {
     "player_0": {
       "playerId": "player_0",
-      "totalWords": 5,
-      "totalFrequencyScore": 18.88,
+      "totalWords": 19,
+      "totalFrequencyScore": 71.36999999999999,
       "wordsByFrequency": {
-        "common": 1,
-        "medium": 3,
-        "rare": 1
+        "common": 3,
+        "medium": 11,
+        "rare": 5
       },
       "firstSeenTimestamp": 1771152135816,
-      "lastSeenTimestamp": 1771152135816,
+      "lastSeenTimestamp": 1771155380870,
       "sessionIds": [
         "1771152135815"
       ]
     },
     "player_1": {
       "playerId": "player_1",
-      "totalWords": 4,
-      "totalFrequencyScore": 16,
+      "totalWords": 12,
+      "totalFrequencyScore": 49.629999999999995,
       "wordsByFrequency": {
-        "common": 0,
-        "medium": 4,
-        "rare": 0
+        "common": 1,
+        "medium": 10,
+        "rare": 1
       },
       "firstSeenTimestamp": 1771152135816,
-      "lastSeenTimestamp": 1771152135816,
+      "lastSeenTimestamp": 1771155360494,
       "sessionIds": [
         "1771152135815"
       ]
     }
   },
   "wordFrequency": {
-    "faints": 1,
-    "whip": 1,
-    "seas": 1,
-    "air": 1,
-    "nix": 1,
-    "jaw": 1,
-    "ego": 1,
-    "aired": 1,
-    "ion": 1
+    "faints": 2,
+    "whip": 2,
+    "seas": 2,
+    "air": 2,
+    "nix": 2,
+    "jaw": 2,
+    "ego": 2,
+    "aired": 2,
+    "ion": 3,
+    "fantasia": 2,
+    "eases": 1,
+    "point": 1,
+    "option": 1,
+    "diaper": 1,
+    "axion": 1,
+    "pony": 2,
+    "woe": 1,
+    "and": 1,
+    "woke": 1
   },
-  "totalEvents": 9
+  "totalEvents": 38
 }

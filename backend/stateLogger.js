@@ -124,8 +124,9 @@ class VocabularyAggregator {
     }) {
         const timestamp = Date.now();
 
-        // Create event record
+        // Create event record with unique ID for frontend deduplication
         const event = {
+            id: `${timestamp}-${playerId}-${word}`,
             sessionId: this.sessionId,
             timestamp,
             isoTimestamp: new Date(timestamp).toISOString(),
@@ -315,6 +316,28 @@ class VocabularyAggregator {
             .sort((a, b) => b[1] - a[1])
             .slice(0, limit)
             .map(([word, count]) => ({ word, count }));
+    }
+
+    /**
+     * Get all logged events from the JSONL file
+     * Returns only WORD_ADDED events for the move log
+     */
+    getAllEvents() {
+        this.flushEvents(); // Ensure all buffered events are written
+
+        try {
+            if (existsSync(STATE_LOG_FILE)) {
+                const content = readFileSync(STATE_LOG_FILE, "utf8");
+                return content
+                    .split("\n")
+                    .filter((line) => line.trim())
+                    .map((line) => JSON.parse(line))
+                    .filter((event) => event.eventType === EventType.WORD_ADDED);
+            }
+        } catch (err) {
+            console.error("Error reading event log:", err);
+        }
+        return [];
     }
 }
 

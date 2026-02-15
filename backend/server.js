@@ -35,6 +35,11 @@ function broadcast(message) {
     io.emit("data", message);
 }
 
+/** Broadcast move log entries to all connected clients via dedicated event. */
+function broadcastMoveLog(entries) {
+    io.emit("move-log", { entries });
+}
+
 const workerPath = join(__dirname, "worker.js");
 let sharedWorker = null;
 /** @type {{ kind: string, payload: unknown, resolve: (r: unknown) => void, reject: (e: Error) => void }[] */
@@ -43,7 +48,7 @@ const workerQueue = [];
 function onWorkerMessage(msg) {
     const next = workerQueue.shift();
     if (next) {
-        if (msg.ok) next.resolve(msg.result);
+        if (msg.ok) next.resolve(msg);
         else next.reject(new Error(msg.error));
     }
     const pending = workerQueue[0];
@@ -80,8 +85,17 @@ io.on("connection", () => {
 app.post("/update-data", async (req, res) => {
     try {
         const payload = req.body;
-        const result = await runWorker("game-state", payload);
+        const workerResponse = await runWorker("game-state", payload);
+        const { result, logEntries } = workerResponse;
+
+        // Broadcast game state to all clients
         broadcast(result);
+
+        // Broadcast log entries via dedicated event if any were created
+        if (logEntries && logEntries.length > 0) {
+            broadcastMoveLog(logEntries);
+        }
+
         res.json({ ok: true, broadcast: io.engine.clientsCount });
     } catch (err) {
         res.status(500).json({ ok: false, error: err.message });
@@ -110,8 +124,8 @@ app.post("/update-image", async (req, res) => {
                 .status(400)
                 .json({ ok: false, error: "Expected JSON body or image data" });
         }
-        const result = await runWorker("image", payload);
-        broadcast(result);
+        const workerResponse = await runWorker("image", payload);
+        broadcast(workerResponse.result);
         res.json({ ok: true, broadcast: io.engine.clientsCount });
     } catch (err) {
         res.status(500).json({ ok: false, error: err.message });
@@ -121,8 +135,8 @@ app.post("/update-image", async (req, res) => {
 // GET /analytics — retrieve real-time vocabulary analytics
 app.get("/analytics", async (req, res) => {
     try {
-        const result = await runWorker("analytics", {});
-        res.json({ ok: true, data: result });
+        const workerResponse = await runWorker("analytics", {});
+        res.json({ ok: true, data: workerResponse.result });
     } catch (err) {
         res.status(500).json({ ok: false, error: err.message });
     }
@@ -132,8 +146,18 @@ app.get("/analytics", async (req, res) => {
 app.get("/analytics/player/:playerId", async (req, res) => {
     try {
         const { playerId } = req.params;
-        const result = await runWorker("player-stats", { playerId });
-        res.json({ ok: true, data: result });
+        const workerResponse = await runWorker("player-stats", { playerId });
+        res.json({ ok: true, data: workerResponse.result });
+    } catch (err) {
+        res.status(500).json({ ok: false, error: err.message });
+    }
+});
+
+// GET /analytics/move-log — retrieve the full move log
+app.get("/analytics/move-log", async (req, res) => {
+    try {
+        const workerResponse = await runWorker("move-log", {});
+        res.json({ ok: true, data: workerResponse.result });
     } catch (err) {
         res.status(500).json({ ok: false, error: err.message });
     }
@@ -154,6 +178,15 @@ httpServer.listen(PORT, () => {
         "  GET  /analytics/player/:id - get vocabulary stats for specific player",
     );
     console.log(
+        "  GET  /analytics/move-log   - get full move log history",
+    );
+    console.log(
         "  WS   /receive-data         - connect to receive broadcasted updates",
+    );
+    console.log(
+        "       - 'data' event        - game state updates",
+    );
+    console.log(
+        "       - 'move-log' event    - move log entries (teacher view)",
     );
 });

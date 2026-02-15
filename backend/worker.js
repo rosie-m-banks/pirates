@@ -227,6 +227,8 @@ parentPort.on('message', (msg) => {
   try {
     const { kind, payload } = msg;
     let result;
+    let logEntries = null; // Separate log entries for dedicated broadcast
+
     if (kind === 'game-state') {
       // Load dictionary and create Set for fast lookup
       const { words, counts, wordsByFirstAndLength, maxWordLength, frequencies } = loadDictionary();
@@ -268,9 +270,28 @@ parentPort.on('message', (msg) => {
         );
       }
 
-      // Attach real-time analytics to result (optional, for debugging/monitoring)
+      // Create log entries separately for dedicated log broadcast
+      if (changesSummary.totalAdded > 0) {
+        const timestamp = Date.now();
+        logEntries = changesSummary.byPlayer.flatMap(p =>
+          p.addedWords.map(word => ({
+            id: `${timestamp}-${p.playerId}-${word}`,
+            timestamp,
+            playerId: p.playerId,
+            playerIndex: p.playerIndex,
+            word,
+            frequencyScore: frequencies[word.toLowerCase()] || 0,
+            eventType: EventType.WORD_ADDED,
+            metadata: {
+              playerIndex: p.playerIndex,
+              availableLetters,
+            }
+          }))
+        );
+      }
+
+      // Attach full analytics (for TeacherView statistics) - keep this for player stats
       result._analytics = {
-        changes: changesSummary,
         vocabularyStats: getAggregator().getRealTimeAnalytics(),
       };
     } else if (kind === 'image') {
@@ -282,10 +303,17 @@ parentPort.on('message', (msg) => {
       // Return stats for a specific player
       const { playerId = 'player_0' } = payload;
       result = getAggregator().getPlayerVocabularyStats(playerId);
+    } else if (kind === 'move-log') {
+      // Return all logged events (WORD_ADDED only)
+      const aggregator = getAggregator();
+      result = {
+        events: aggregator.getAllEvents(),
+        sessionId: aggregator.sessionId,
+      };
     } else {
       result = { type: 'unknown', timestamp: Date.now(), data: payload, processed: false };
     }
-    parentPort.postMessage({ ok: true, result });
+    parentPort.postMessage({ ok: true, result, logEntries });
   } catch (err) {
     parentPort.postMessage({ ok: false, error: err.message });
   }
