@@ -1,6 +1,9 @@
 import { useEffect, useState } from "react";
 import { io, Socket } from "socket.io-client";
 import StudentView from "./StudentView";
+import ValidationView from "./ValidationView";
+
+type ViewMode = "student" | "validation";
 
 interface Player {
     words: string[];
@@ -29,6 +32,7 @@ const socket: Socket = io("http://localhost:3000", {
 function App() {
     const [gameData, setGameData] = useState<GameData | null>(null);
     const [isConnected, setIsConnected] = useState(false);
+    const [viewMode, setViewMode] = useState<ViewMode>("student");
 
     useEffect(() => {
         socket.connect();
@@ -107,8 +111,45 @@ function App() {
                     </h1>
                 </header>
 
-                {gameData && (
+                {/* View Mode Toggle */}
+                <div className="mb-8 flex gap-4">
+                    <button
+                        onClick={() => setViewMode("student")}
+                        className="px-6 py-3 rounded-lg font-bold shadow-[4px_6px_0px_rgba(0,0,0)] transition-all"
+                        style={{
+                            backgroundColor: viewMode === "student" ? "#6b9ac4" : "#e5e7eb",
+                            color: viewMode === "student" ? "white" : "#6b7280",
+                            border: `3px solid ${viewMode === "student" ? "#4e7ba8" : "#d1d5db"}`,
+                            fontSize: "1.1rem",
+                            transform: viewMode === "student" ? "scale(1.05)" : "scale(1)",
+                        }}
+                    >
+                        🎮 Student View
+                    </button>
+                    <button
+                        onClick={() => setViewMode("validation")}
+                        className="px-6 py-3 rounded-lg font-bold shadow-[4px_6px_0px_rgba(0,0,0)] transition-all"
+                        style={{
+                            backgroundColor: viewMode === "validation" ? "#6b9ac4" : "#e5e7eb",
+                            color: viewMode === "validation" ? "white" : "#6b7280",
+                            border: `3px solid ${viewMode === "validation" ? "#4e7ba8" : "#d1d5db"}`,
+                            fontSize: "1.1rem",
+                            transform: viewMode === "validation" ? "scale(1.05)" : "scale(1)",
+                        }}
+                    >
+                        ✅ Validation View
+                    </button>
+                </div>
+
+                {gameData && viewMode === "student" && (
                     <StudentView
+                        availableLetters={gameData.availableLetters}
+                        players={gameData.players}
+                        recommendedWords={gameData.recommendedWords}
+                    />
+                )}
+                {gameData && viewMode === "validation" && (
+                    <ValidationView
                         availableLetters={gameData.availableLetters}
                         players={gameData.players}
                         recommendedWords={gameData.recommendedWords}
