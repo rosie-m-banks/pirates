@@ -13,9 +13,11 @@ import numpy as np
 DEFAULT_TEMPLATE_DIR = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "templates"
 )
-TEMPLATE_SIZE = 64
-LETTER_ROI_FRAC = 0.70  # use center 70% for letter
-MIN_MATCH_SCORE = 0.45   # reject below this (TM_CCOEFF_NORMED is in [-1, 1])
+TEMPLATE_SIZE = 96   # larger = more discriminative (was 64)
+LETTER_ROI_FRAC = 0.70
+MIN_MATCH_SCORE = 0.52   # reject weak matches
+# Winner must beat second-best by this much (stops "everything is O")
+MIN_WINNER_MARGIN = 0.07
 
 
 def _letter_roi(img, center_frac=LETTER_ROI_FRAC):
@@ -28,11 +30,16 @@ def _letter_roi(img, center_frac=LETTER_ROI_FRAC):
 
 
 def _binarize_same_conv(roi):
-    """Otsu binarize; force convention letter=black (0), background=white (255).
-    If most pixels are black after Otsu, assume background was dark -> invert."""
+    """Binarize; letter=black (0), background=white (255). Use adaptive then
+    enforce convention so template and crop are comparable."""
     if roi.ndim > 2:
         roi = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
-    _, binary = cv2.threshold(roi, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    h, w = roi.shape[:2]
+    block = min(31, (min(h, w) // 4) | 1)
+    binary = cv2.adaptiveThreshold(
+        roi, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+        cv2.THRESH_BINARY, block, 8
+    )
     if np.mean(binary) < 127:
         binary = 255 - binary
     return binary
@@ -96,21 +103,25 @@ class TemplateRecognizer:
         return len(self._templates) > 0
 
     def recognize(self, crop):
-        """Return (letter_or_None, confidence_0_100). Uses 4 rotations and both polarities."""
+        """Return (letter_or_None, confidence_0_100). Uses 4 rotations and both polarities.
+        Only accepts when one template clearly wins (margin over second-best)."""
         if not self._templates:
             return None, 0.0
         prep = normalize_for_match(crop, TEMPLATE_SIZE)
+        # For each candidate (rotation, polarity), get best letter and score; require clear winner
         best_letter, best_score = None, -1.0
-        # Try 4 rotations and both polarities (letter black vs letter white)
         for k in range(4):
             rot = prep if k == 0 else np.rot90(prep, k)
             for img in (rot, 255 - rot):
-                for letter, tpl in self._templates:
-                    score = _match_score(img, tpl)
-                    if score > best_score:
-                        best_score = score
-                        best_letter = letter
-        if best_score < MIN_MATCH_SCORE:
+                scores = [(_match_score(img, tpl), letter) for letter, tpl in self._templates]
+                scores.sort(key=lambda x: -x[0])
+                first_score, first_letter = scores[0]
+                second_score = scores[1][0] if len(scores) > 1 else 0.0
+                margin_ok = (first_score - second_score) >= MIN_WINNER_MARGIN
+                if (first_score >= MIN_MATCH_SCORE and margin_ok and first_score > best_score):
+                    best_score = first_score
+                    best_letter = first_letter
+        if best_letter is None:
             return None, 0.0
         conf = min(100.0, best_score * 100.0)
         return best_letter, conf
