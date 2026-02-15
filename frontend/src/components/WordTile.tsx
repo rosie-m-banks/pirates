@@ -1,3 +1,6 @@
+import { useState, useEffect } from "react";
+import { fetchDefinition } from "../utils/definition";
+
 interface WordTileProps {
     word: string;
     borderColor?: string;
@@ -11,6 +14,20 @@ export default function WordTile({
 }: WordTileProps) {
     const letters = word.toUpperCase().split("");
     const width = letters.length * 48 + 32;
+    const [isHovered, setIsHovered] = useState(false);
+    const [definition, setDefinition] = useState<string | null>(null);
+    const [isLoading, setIsLoading] = useState(false);
+
+    // Fetch definition when hovered
+    useEffect(() => {
+        if (isHovered && !definition && !isLoading) {
+            setIsLoading(true);
+            fetchDefinition(word).then((def) => {
+                setDefinition(def);
+                setIsLoading(false);
+            });
+        }
+    }, [isHovered, word, definition, isLoading]);
 
     return (
         <div
@@ -18,6 +35,8 @@ export default function WordTile({
             style={{
                 transform: `rotate(${Math.random() * 4 - 2}deg)`,
             }}
+            onMouseEnter={() => setIsHovered(true)}
+            onMouseLeave={() => setIsHovered(false)}
         >
             <svg
                 className="absolute inset-0 w-full h-full"
@@ -61,6 +80,52 @@ export default function WordTile({
                     </span>
                 ))}
             </div>
+
+            {/* Tooltip */}
+            {isHovered && (
+                <div
+                    className="absolute z-50 bg-white border-2 border-gray-800 rounded-lg shadow-lg p-3 max-w-xs pointer-events-none"
+                    style={{
+                        bottom: "100%",
+                        left: "50%",
+                        transform: "translateX(-50%) translateY(-8px)",
+                        marginBottom: "8px",
+                    }}
+                >
+                    <div className="text-sm font-semibold mb-1 text-gray-800">
+                        {word.toUpperCase()}
+                    </div>
+                    {isLoading ? (
+                        <div className="text-xs text-gray-600">Loading definition...</div>
+                    ) : definition ? (
+                        <div className="text-xs text-gray-700">{definition}</div>
+                    ) : (
+                        <div className="text-xs text-gray-500">Definition not available</div>
+                    )}
+                    {/* Tooltip arrow */}
+                    <div
+                        className="absolute top-full left-1/2 transform -translate-x-1/2 -mt-1"
+                        style={{
+                            width: 0,
+                            height: 0,
+                            borderLeft: "8px solid transparent",
+                            borderRight: "8px solid transparent",
+                            borderTop: "8px solid white",
+                        }}
+                    />
+                    <div
+                        className="absolute top-full left-1/2 transform -translate-x-1/2"
+                        style={{
+                            width: 0,
+                            height: 0,
+                            borderLeft: "9px solid transparent",
+                            borderRight: "9px solid transparent",
+                            borderTop: "9px solid #1f2937",
+                            marginTop: "-1px",
+                        }}
+                    />
+                </div>
+            )}
         </div>
     );
 }

@@ -4,6 +4,7 @@ import BeachTile from "./components/BeachTile";
 import WordTile from "./components/WordTile";
 import WavePattern from "./components/WavePattern";
 import ScrollHint from "./components/ScrollHint";
+import { fetchDefinition } from "./utils/definition";
 
 import type { GameData } from "./App";
 
@@ -27,6 +28,7 @@ export default function StudentView({
     recommendedWords = {},
 }: GameData) {
     const [numHints, setNumHints] = useState(0);
+    const [targetWordDefinition, setTargetWordDefinition] = useState<string | null>(null);
 
     const letterList = availableLetters.toUpperCase().split("");
 
@@ -36,10 +38,20 @@ export default function StudentView({
         return words.length > 0 ? words[0] : null;
     }, [recommendedWords]);
 
-    // Reset hints when target word changes
+    // Reset hints and definition when target word changes
     useEffect(() => {
         setNumHints(0);
+        setTargetWordDefinition(null);
     }, [targetWord]);
+
+    // Fetch definition when second hint is requested
+    useEffect(() => {
+        if (targetWord && numHints >= 1 && !targetWordDefinition) {
+            fetchDefinition(targetWord).then((definition) => {
+                setTargetWordDefinition(definition);
+            });
+        }
+    }, [targetWord, numHints, targetWordDefinition]);
 
     const construction = targetWord ? recommendedWords[targetWord] : [];
 
@@ -105,13 +117,17 @@ export default function StudentView({
                     .sort()
                     .join(", ")}`;
             }
-
             case 2:
-                // hint 3: Tell them the length of the final word
+                // hint 3. Tell them the definition of the word
+                if (targetWordDefinition) {
+                    return `The definition of the word you can make is: ${targetWordDefinition}`;
+                }
+            case 3:
+                // hint 4: Tell them the length of the final word
                 return `The word you can make is ${targetWord.length} letters long`;
 
-            case 3: {
-                // hint 4: Hangman style - show first and last letter, hide middle
+            case 4: {
+                // hint 5: Hangman style - show first and last letter, hide middle
                 const upper = targetWord.toUpperCase();
                 const hangman =
                     upper[0] +
@@ -133,7 +149,7 @@ export default function StudentView({
             hints.push(getHintText(i));
         }
         return hints;
-    }, [numHints, targetWord, construction, constructionType, players]);
+    }, [numHints, targetWord, construction, constructionType, players, targetWordDefinition]);
 
     // Function to advance to next hint
     function getNextHint() {
