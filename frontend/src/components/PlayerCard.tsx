@@ -1,4 +1,4 @@
-import { getLevelColor } from "../utils/vocabularyLevels";
+import { getLevelColor, getLevelLabel } from "../utils/vocabularyLevels";
 import { PLAYER_COLORS } from "../StudentView";
 import type { PlayerStats } from "../types/stats";
 
@@ -47,7 +47,7 @@ export default function PlayerCard({
                             ),
                         }}
                     >
-                        {stats.vocabularyLevel.toUpperCase()}
+                        {getLevelLabel(stats.vocabularyLevel)}
                     </span>
                 )}
             </div>
@@ -81,7 +81,7 @@ export default function PlayerCard({
                         className="text-sm font-semibold"
                         style={{ color: "var(--wave-color)" }}
                     >
-                        Avg Frequency
+                        Avg Complexity
                     </div>
                 </div>
             </div>

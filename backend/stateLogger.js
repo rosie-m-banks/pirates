@@ -253,17 +253,20 @@ class VocabularyAggregator {
     }
 
     /**
-     * Determine vocabulary level based on average word frequency
-     * Zipf scale: 0 (very rare) to 8 (very common)
+     * Determine vocabulary level based on average Zipf word frequency.
+     * Mapped to approximate elementary-school grade reading levels.
      * @param {number} avgFrequency
      * @returns {string}
      */
     getVocabularyLevel(avgFrequency) {
-        if (avgFrequency >= 6) return "beginner"; // Using very common words
-        if (avgFrequency >= 5) return "intermediate"; // Using common words
-        if (avgFrequency >= 4) return "advanced"; // Using less common words
-        if (avgFrequency >= 3) return "expert"; // Using rare words
-        return "master"; // Using very rare/obscure words
+        if (avgFrequency >= 5.6) return "pre-k";
+        if (avgFrequency >= 5.2) return "kindergarten";
+        if (avgFrequency >= 4.8) return "1st-grade";
+        if (avgFrequency >= 4.5) return "2nd-grade";
+        if (avgFrequency >= 4.2) return "3rd-grade";
+        if (avgFrequency >= 3.9) return "4th-grade";
+        if (avgFrequency >= 3.6) return "5th-grade";
+        return "6th-grade+";
     }
 
     /**
