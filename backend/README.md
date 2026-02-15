@@ -67,6 +67,7 @@ Alternative shape: `wordsPerPlayer` (array of word arrays) and `available` inste
 - Only words that can be built by **adding** things count: e.g. `CAT + O + R → ACTOR` is valid; using only `CAT` to form `ACT` (anagram, no addition) is not.
 - Every recommended word has length **≥ 3**.
 - If a player word is used in a construction, **all** of its letters are used (no partial words).
+- **Letters not from whole words** must come only from **available letters** (loose tiles). The backend never splits existing words into single letters — e.g. with words `cat`, `boat` and available `or`, `aboard` is not recommended (it would require using a, a, b, d from the words as loose letters).
 - Each construction has at least **2** building blocks (e.g. word + letter, or several letters).
 
 ## Project layout
