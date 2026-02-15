@@ -130,7 +130,12 @@ function App() {
                 {isConnected ? "Connected" : "Disconnected"}
             </div>
             <div className="min-h-screen flex flex-col items-center justify-start py-12 px-8">
-                <header className="mb-8">
+                <header className="mb-8 flex items-center gap-6">
+                    <img
+                        src="/logo.png"
+                        alt="Pirates logo"
+                        className="w-30 h-30"
+                    />
                     <h1
                         className="relative text-8xl tracking-wider flex items-center gap-4"
                         style={{
