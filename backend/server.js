@@ -40,6 +40,11 @@ function broadcastMoveLog(entries) {
     io.emit("move-log", { entries });
 }
 
+/** Broadcast image updates to all connected clients via dedicated event. */
+function broadcastImage(imageData) {
+    io.emit("image", imageData);
+}
+
 const workerPath = join(__dirname, "worker.js");
 let sharedWorker = null;
 /** @type {{ kind: string, payload: unknown, resolve: (r: unknown) => void, reject: (e: Error) => void }[] */
@@ -106,7 +111,7 @@ app.post("/update-data", async (req, res) => {
     }
 });
 
-// POST /update-image — accept JSON (metadata/base64) or raw binary; process in worker and broadcast
+// POST /update-image — accept JSON (metadata/base64) or raw binary; broadcast via dedicated 'image' event
 app.post("/update-image", async (req, res) => {
     try {
         const isJson = req.is("application/json");
@@ -129,7 +134,10 @@ app.post("/update-image", async (req, res) => {
                 .json({ ok: false, error: "Expected JSON body or image data" });
         }
         const workerResponse = await runWorker("image", payload);
-        broadcast(workerResponse.result);
+
+        // Broadcast image via dedicated event (not mixed with game data)
+        broadcastImage(workerResponse.result);
+
         res.json({ ok: true, broadcast: io.engine.clientsCount });
     } catch (err) {
         res.status(500).json({ ok: false, error: err.message });
@@ -189,4 +197,5 @@ httpServer.listen(PORT, () => {
     console.log(
         "       - 'move-log' event    - move log entries (teacher view)",
     );
+    console.log("       - 'image' event       - image updates (teacher view)");
 });

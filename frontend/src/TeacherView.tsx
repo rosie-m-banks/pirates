@@ -3,6 +3,7 @@ import MoveLog from "./components/MoveLog";
 import PlayerStatistics from "./components/PlayerStatistics";
 import VocabularyLegend from "./components/VocabularyLegend";
 import { useMoveLog } from "./hooks/useMoveLog";
+import { useGameImage } from "./hooks/useGameImage";
 import type { TeacherGameData, PlayerStats } from "./types/stats";
 
 const STUDENT_NAMES = [
@@ -29,12 +30,14 @@ interface TeacherViewProps {
  *
  * Features:
  * - Full move log loaded from backend (single source of truth)
- * - Real-time updates via dedicated WebSocket event ('move-log')
+ * - Real-time updates via dedicated WebSocket events ('move-log', 'image')
  * - Backend handles all log logic; frontend only displays
  * - Player statistics and vocabulary levels
+ * - Live game board image display
  */
 export default function TeacherView({ gameData }: TeacherViewProps) {
     const { moveLog, isLoading, error } = useMoveLog();
+    const { imageUrl, timestamp: imageTimestamp } = useGameImage();
     const [playerStats, setPlayerStats] = useState<Map<number, PlayerStats>>(
         new Map(),
     );
@@ -77,6 +80,28 @@ export default function TeacherView({ gameData }: TeacherViewProps) {
                     error={error}
                 />
             </div>
+
+            {imageUrl && (
+                <div className="mt-6 bg-white rounded-xl p-6 shadow-lg border-4 border-black">
+                    <div className="flex items-center gap-3 mb-4">
+                        <h3 className="text-2xl font-bold">🎮 Game Board</h3>
+                        {imageTimestamp && (
+                            <span className="text-sm text-gray-500">
+                                Last updated:{" "}
+                                {new Date(imageTimestamp).toLocaleTimeString()}
+                            </span>
+                        )}
+                    </div>
+                    <div className="flex justify-center">
+                        <img
+                            src={imageUrl}
+                            alt="Game board"
+                            className="max-w-full h-auto rounded-lg border-2 border-gray-300"
+                            style={{ maxHeight: "600px" }}
+                        />
+                    </div>
+                </div>
+            )}
 
             <VocabularyLegend />
         </div>
