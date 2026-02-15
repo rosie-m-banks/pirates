@@ -9,3 +9,5 @@ torchvision
 transformers
 protobuf
 sentencepiece
+mediapipe
+anthropic
