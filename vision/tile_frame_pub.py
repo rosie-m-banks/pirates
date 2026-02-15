@@ -39,7 +39,7 @@ class TilePublisher():
             # Use dedicated session for update-image requests to avoid interference with update-data
             response = self.image_session.post(
                 self.backend_url,
-                json={"image": img_base64},
+                json={"base64": img_base64},
                 headers={"Content-Type": "application/json"},
                 timeout=10.0
             )
