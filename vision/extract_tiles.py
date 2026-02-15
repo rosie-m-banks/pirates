@@ -29,8 +29,8 @@ class TileExtractor:
 
         contours, _ = cv2.findContours(closed, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
 
-        min_area = 4000
-        max_area = 10000
+        min_area = 1500
+        max_area = 4000
 
         candidates = []
         for cnt in contours:
