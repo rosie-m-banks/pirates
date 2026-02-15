@@ -3,7 +3,7 @@ import MoveLog from "./components/MoveLog";
 import PlayerStatistics from "./components/PlayerStatistics";
 import VocabularyLegend from "./components/VocabularyLegend";
 import { useMoveLog } from "./hooks/useMoveLog";
-import type { TeacherGameData, PlayerStats } from "./types/teacher";
+import type { TeacherGameData, PlayerStats } from "./types/stats";
 
 const STUDENT_NAMES = [
     "Alice",
@@ -103,4 +103,4 @@ export default function TeacherView({ gameData }: TeacherViewProps) {
 }
 
 // Re-export type for convenience
-export type { TeacherGameData } from "./types/teacher";
+export type { TeacherGameData } from "./types/stats";

@@ -52,7 +52,11 @@ function onWorkerMessage(msg) {
         else next.reject(new Error(msg.error));
     }
     const pending = workerQueue[0];
-    if (pending) sharedWorker.postMessage({ kind: pending.kind, payload: pending.payload });
+    if (pending)
+        sharedWorker.postMessage({
+            kind: pending.kind,
+            payload: pending.payload,
+        });
 }
 
 /**
@@ -177,15 +181,11 @@ httpServer.listen(PORT, () => {
     console.log(
         "  GET  /analytics/player/:id - get vocabulary stats for specific player",
     );
-    console.log(
-        "  GET  /analytics/move-log   - get full move log history",
-    );
+    console.log("  GET  /analytics/move-log   - get full move log history");
     console.log(
         "  WS   /receive-data         - connect to receive broadcasted updates",
     );
-    console.log(
-        "       - 'data' event        - game state updates",
-    );
+    console.log("       - 'data' event        - game state updates");
     console.log(
         "       - 'move-log' event    - move log entries (teacher view)",
     );

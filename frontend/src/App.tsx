@@ -3,7 +3,7 @@ import { io, Socket } from "socket.io-client";
 import StudentView from "./StudentView";
 import ValidationView from "./ValidationView";
 import TeacherView from "./TeacherView";
-import type { TeacherGameData } from "./types/teacher";
+import type { TeacherGameData } from "./types/stats";
 
 type ViewMode = "student" | "validation" | "teacher";
 
@@ -33,7 +33,8 @@ const socket: Socket = io("http://localhost:3000", {
 
 function App() {
     const [gameData, setGameData] = useState<GameData | null>(null);
-    const [teacherGameData, setTeacherGameData] = useState<TeacherGameData | null>(null);
+    const [teacherGameData, setTeacherGameData] =
+        useState<TeacherGameData | null>(null);
     const [isConnected, setIsConnected] = useState(false);
     const [viewMode, setViewMode] = useState<ViewMode>("student");
 
@@ -129,11 +130,15 @@ function App() {
                         onClick={() => setViewMode("student")}
                         className="px-6 py-3 rounded-lg font-bold shadow-[4px_6px_0px_rgba(0,0,0)] transition-all"
                         style={{
-                            backgroundColor: viewMode === "student" ? "#6b9ac4" : "#e5e7eb",
+                            backgroundColor:
+                                viewMode === "student" ? "#6b9ac4" : "#e5e7eb",
                             color: viewMode === "student" ? "white" : "#6b7280",
                             border: `3px solid ${viewMode === "student" ? "#4e7ba8" : "#d1d5db"}`,
                             fontSize: "1.1rem",
-                            transform: viewMode === "student" ? "scale(1.05)" : "scale(1)",
+                            transform:
+                                viewMode === "student"
+                                    ? "scale(1.05)"
+                                    : "scale(1)",
                         }}
                     >
                         🎮 Student View
@@ -142,11 +147,18 @@ function App() {
                         onClick={() => setViewMode("validation")}
                         className="px-6 py-3 rounded-lg font-bold shadow-[4px_6px_0px_rgba(0,0,0)] transition-all"
                         style={{
-                            backgroundColor: viewMode === "validation" ? "#6b9ac4" : "#e5e7eb",
-                            color: viewMode === "validation" ? "white" : "#6b7280",
+                            backgroundColor:
+                                viewMode === "validation"
+                                    ? "#6b9ac4"
+                                    : "#e5e7eb",
+                            color:
+                                viewMode === "validation" ? "white" : "#6b7280",
                             border: `3px solid ${viewMode === "validation" ? "#4e7ba8" : "#d1d5db"}`,
                             fontSize: "1.1rem",
-                            transform: viewMode === "validation" ? "scale(1.05)" : "scale(1)",
+                            transform:
+                                viewMode === "validation"
+                                    ? "scale(1.05)"
+                                    : "scale(1)",
                         }}
                     >
                         ✅ Validation View
@@ -155,11 +167,15 @@ function App() {
                         onClick={() => setViewMode("teacher")}
                         className="px-6 py-3 rounded-lg font-bold shadow-[4px_6px_0px_rgba(0,0,0)] transition-all"
                         style={{
-                            backgroundColor: viewMode === "teacher" ? "#6b9ac4" : "#e5e7eb",
+                            backgroundColor:
+                                viewMode === "teacher" ? "#6b9ac4" : "#e5e7eb",
                             color: viewMode === "teacher" ? "white" : "#6b7280",
                             border: `3px solid ${viewMode === "teacher" ? "#4e7ba8" : "#d1d5db"}`,
                             fontSize: "1.1rem",
-                            transform: viewMode === "teacher" ? "scale(1.05)" : "scale(1)",
+                            transform:
+                                viewMode === "teacher"
+                                    ? "scale(1.05)"
+                                    : "scale(1)",
                         }}
                     >
                         👨‍🏫 Teacher View

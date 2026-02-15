@@ -1,17 +1,5 @@
 import PlayerCard from "./PlayerCard";
-
-interface Player {
-    words: string[];
-}
-
-interface PlayerStats {
-    playerId: string;
-    totalWords: number;
-    uniqueWords: number;
-    vocabularyDiversity: number;
-    avgWordFrequency: number;
-    vocabularyLevel: string;
-}
+import type { PlayerStats, Player } from "../types/stats";
 
 interface PlayerStatisticsProps {
     players: Player[];

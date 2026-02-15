@@ -20,11 +20,13 @@ export interface MoveData {
     }[];
 }
 
+export interface Player {
+    words: string[];
+}
+
 export interface PlayerStats {
     playerId: string;
     totalWords: number;
-    uniqueWords: number;
-    vocabularyDiversity: number;
     avgWordFrequency: number;
     vocabularyLevel: string;
 }

@@ -1,12 +1,5 @@
 import { getLevelColor } from "../utils/vocabularyLevels";
-
-interface PlayerStats {
-    totalWords: number;
-    uniqueWords: number;
-    vocabularyDiversity: number;
-    avgWordFrequency: number;
-    vocabularyLevel: string;
-}
+import type { PlayerStats } from "../types/stats";
 
 interface PlayerCardProps {
     studentName: string;
@@ -30,7 +23,9 @@ export default function PlayerCard({
                     <span
                         className="px-3 py-1 rounded-full text-xs font-bold text-white"
                         style={{
-                            backgroundColor: getLevelColor(stats.vocabularyLevel),
+                            backgroundColor: getLevelColor(
+                                stats.vocabularyLevel,
+                            ),
                         }}
                     >
                         {stats.vocabularyLevel.toUpperCase()}
@@ -58,21 +53,6 @@ export default function PlayerCard({
                     <div className="text-sm text-gray-600">Avg Frequency</div>
                 </div>
             </div>
-
-            {stats && (
-                <div className="mt-3 pt-3 border-t border-gray-300 text-sm text-gray-600">
-                    <div className="flex justify-between">
-                        <span>Unique words:</span>
-                        <span className="font-semibold">{stats.uniqueWords}</span>
-                    </div>
-                    <div className="flex justify-between">
-                        <span>Diversity:</span>
-                        <span className="font-semibold">
-                            {(stats.vocabularyDiversity * 100).toFixed(1)}%
-                        </span>
-                    </div>
-                </div>
-            )}
         </div>
     );
 }
