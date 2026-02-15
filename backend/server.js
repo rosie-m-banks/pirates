@@ -11,6 +11,7 @@ import { Worker } from "worker_threads";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
 import cors from "cors";
+import { readFile } from "fs/promises";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT || 3000;
@@ -76,6 +77,45 @@ io.on("connection", () => {
     // Clients connected on /receive-data; they receive via io.emit('data', ...)
 });
 
+// Load definitions file (lazy load, cached in memory)
+let definitionsCache = null;
+const definitionsPath = join(__dirname, "data", "definitions.json");
+
+async function loadDefinitions() {
+    if (definitionsCache === null) {
+        try {
+            const data = await readFile(definitionsPath, "utf-8");
+            definitionsCache = JSON.parse(data);
+            console.log(`Loaded ${Object.keys(definitionsCache).length} definitions`);
+        } catch (err) {
+            console.error("Failed to load definitions:", err.message);
+            definitionsCache = {}; // Empty cache on error
+        }
+    }
+    return definitionsCache;
+}
+
+// GET /definition/:word — get definition for a word
+app.get("/definition/:word", async (req, res) => {
+    try {
+        const word = req.params.word.toLowerCase().trim();
+        if (!word) {
+            return res.status(400).json({ ok: false, error: "Word parameter required" });
+        }
+        
+        const definitions = await loadDefinitions();
+        const definition = definitions[word];
+        
+        if (definition) {
+            res.json({ ok: true, word, definition });
+        } else {
+            res.json({ ok: true, word, definition: null });
+        }
+    } catch (err) {
+        res.status(500).json({ ok: false, error: err.message });
+    }
+});
+
 // POST /update-data — receive game state (JSON), process in worker, broadcast result to all WS clients
 app.post("/update-data", async (req, res) => {
     try {
@@ -120,6 +160,9 @@ app.post("/update-image", async (req, res) => {
 
 httpServer.listen(PORT, () => {
     console.log(`Server listening on http://localhost:${PORT}`);
+    console.log(
+        "  GET  /definition/:word - get definition for a word",
+    );
     console.log(
         "  POST /update-data  - send game state (JSON), broadcast to /receive-data",
     );
