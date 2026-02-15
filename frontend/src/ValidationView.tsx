@@ -10,12 +10,13 @@ const CONSTRUCTION_TYPE_LABELS: Record<string, string> = {
     "make-from-center": "Make from Center",
 };
 
-type SortField = "word" | "type" | "length";
+type SortField = "word" | "type" | "length" | "rank";
 
 interface WordConstruction {
     word: string;
     construction: string[];
     type: string | null;
+    backendRank: number; // Original ranking from backend (1-indexed)
 }
 
 // Extract construction analysis logic
@@ -57,13 +58,13 @@ export default function ValidationView({
     ],
     recommendedWords = {},
 }: GameData) {
-    const [sortField, setSortField] = useState<SortField>("type");
+    const [sortField, setSortField] = useState<SortField>("rank");
     const [sortAsc, setSortAsc] = useState(true);
 
     // Analyze all recommended words and their constructions
     const wordConstructions = useMemo(() => {
         const words = Object.keys(recommendedWords);
-        return words.map((word): WordConstruction => {
+        return words.map((word, index): WordConstruction => {
             const construction = recommendedWords[word];
             const type = analyzeConstruction(
                 word,
@@ -71,7 +72,12 @@ export default function ValidationView({
                 players,
                 availableLetters,
             );
-            return { word, construction, type };
+            return {
+                word,
+                construction,
+                type,
+                backendRank: index + 1 // Preserve backend's original ranking
+            };
         });
     }, [recommendedWords, players, availableLetters]);
 
@@ -81,6 +87,9 @@ export default function ValidationView({
         sorted.sort((a, b) => {
             let comparison = 0;
             switch (sortField) {
+                case "rank":
+                    comparison = a.backendRank - b.backendRank;
+                    break;
                 case "word":
                     comparison = a.word.localeCompare(b.word);
                     break;
@@ -158,8 +167,14 @@ export default function ValidationView({
                     <table className="w-full border-collapse border-2 border-gray-300">
                         <thead>
                             <tr className="bg-gray-200">
-                                <th className="border border-gray-300 px-4 py-2 text-left">
-                                    #
+                                <th
+                                    className="border border-gray-300 px-4 py-2 text-left cursor-pointer hover:bg-gray-300"
+                                    onClick={() => handleSort("rank")}
+                                    title="Ranking from backend scoring system"
+                                >
+                                    Rank{" "}
+                                    {sortField === "rank" &&
+                                        (sortAsc ? "↑" : "↓")}
                                 </th>
                                 <th
                                     className="border border-gray-300 px-4 py-2 text-left cursor-pointer hover:bg-gray-300"
@@ -192,13 +207,13 @@ export default function ValidationView({
                         </thead>
                         <tbody>
                             {sortedWords.map(
-                                ({ word, construction, type }, idx) => (
+                                ({ word, construction, type, backendRank }, idx) => (
                                     <tr
                                         key={idx}
                                         className="hover:bg-gray-50 even:bg-gray-100"
                                     >
-                                        <td className="border border-gray-300 px-4 py-2 text-gray-600">
-                                            {idx + 1}
+                                        <td className="border border-gray-300 px-4 py-2 text-gray-600 font-semibold">
+                                            {backendRank}
                                         </td>
                                         <td className="border border-gray-300 px-4 py-2 font-bold text-lg">
                                             {word.toUpperCase()}

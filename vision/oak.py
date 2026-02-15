@@ -45,8 +45,7 @@ class Oak(GenericCamera):
 
         self.path = path
         self._camera_info = self.get_cam_data(self.load_cameras_yaml(), "oak")
-        self.gray = None
-        self._gray_lock = Lock()  # Lock for thread-safe access to self.gray
+        self.rgb = None
         self._device_objects = {}  # Store device objects to prevent garbage collection
 
         for key, cam_cfg in self._camera_info.items():
@@ -117,11 +116,12 @@ class Oak(GenericCamera):
             if rgb_frame is not None:
                 print("we have a frame")
                 frame = rgb_frame.getCvFrame()
-                gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-                with self._gray_lock:
-                    self.gray = gray_frame
+                
+    def get_rgb(self):
+        self.get_frame()
+        return self.rgb
 
-    def get_gray(self):
+    def get_frame(self):
         """Get the latest grayscale frame from the camera.
         
         Drains old frames from the queue to ensure we always get the most recent frame.
@@ -141,15 +141,11 @@ class Oak(GenericCamera):
         # Process the latest frame if we got one
         if latest_frame is not None:
             frame = latest_frame.getCvFrame()
-            gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-            with self._gray_lock:
-                self.gray = gray_frame
-        
-        # Return the latest frame (or cached one if no new frame available)
-        with self._gray_lock:
-            if self.gray is not None:
-                return self.gray.copy()
-            return None
+            self.rgb = frame
+            
+    def get_gray(self):
+        self.get_frame()
+        return cv2.cvtColor(self.rgb, cv2.COLOR_BGR2GRAY)
 
     def _cleanup_on_exit(self):
         """Cleanup method registered with atexit - runs at Python shutdown."""
