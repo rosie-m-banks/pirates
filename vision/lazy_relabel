@@ -2,9 +2,16 @@ import os
 import tkinter as tk
 from PIL import Image, ImageTk
 
-image_dir = "crops-07"  # change this
-files = [f for f in os.listdir(image_dir) if f.lower().endswith((".png", ".jpg", ".jpeg"))]
-files.sort()
+# Process directories crops-07 through crops-13
+image_dirs = [f"crops-{i:02d}" for i in range(7, 14)]
+
+# Collect all files from all directories with their directory paths
+all_files = []
+for image_dir in image_dirs:
+    if os.path.exists(image_dir):
+        files = [f for f in os.listdir(image_dir) if f.lower().endswith((".png", ".jpg", ".jpeg"))]
+        for f in sorted(files):
+            all_files.append((image_dir, f))
 
 root = tk.Tk()
 root.title("Image Renamer")
@@ -13,25 +20,34 @@ index = 0
 
 def show_image():
     global img_label, index
-    if index >= len(files):
-        print("Done!")
+    if index >= len(all_files):
+        print("Done! All directories processed.")
         root.destroy()
         return
-    img_path = os.path.join(image_dir, files[index])
+    image_dir, filename = all_files[index]
+    img_path = os.path.join(image_dir, filename)
     img = Image.open(img_path)
     img.thumbnail((800, 600))
     tk_img = ImageTk.PhotoImage(img)
     img_label.config(image=tk_img)
     img_label.image = tk_img
-    root.title(f"{files[index]} ({index+1}/{len(files)})")
+    root.title(f"{image_dir}/{filename} ({index+1}/{len(all_files)})")
 
 def rename_image(event=None):
     global index
     new_name = entry.get().strip()
     if new_name:
-        old_path = os.path.join(image_dir, files[index])
-        new_path = os.path.join(image_dir, new_name + ".png")
+        image_dir, filename = all_files[index]
+        old_path = os.path.join(image_dir, filename)
+        
+        # Add .png extension if not present
+        if not new_name.lower().endswith(('.png', '.jpg', '.jpeg')):
+            new_name = new_name + ".png"
+        
+        new_path = os.path.join(image_dir, new_name)
+        
         os.rename(old_path, new_path)
+        print(f"Renamed: {image_dir}/{filename} -> {image_dir}/{new_name}")
         index += 1
         entry.delete(0, tk.END)
         show_image()
@@ -39,9 +55,15 @@ def rename_image(event=None):
 img_label = tk.Label(root)
 img_label.pack()
 
-entry = tk.Entry(root, width=50)
+entry = tk.Entry(root, width=50, font=("Arial", 20))
 entry.pack()
 entry.bind("<Return>", rename_image)
+entry.focus()
+
+# Instructions label
+instructions = tk.Label(root, text="Enter any filename and press Enter", 
+                        font=("Arial", 12))
+instructions.pack()
 
 show_image()
 root.mainloop()

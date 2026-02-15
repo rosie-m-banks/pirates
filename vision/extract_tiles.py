@@ -2,13 +2,15 @@ from oak import Oak
 import cv2
 import numpy as np
 import time
+import sys
 
 class TileExtractor:
     """Grabs a grayscale frame from the Oak camera, detects Scrabble tile
     bounding boxes, draws them on the image, and writes the result to disk."""
 
-    def __init__(self, camera_config="camera.yaml"):
+    def __init__(self, camera_config="camera.yaml", photo_path=None):
         # self.oak = Oak(camera_config)
+        self.photo_path = photo_path or "output_photo4.jpg"
         time.sleep(10)
 
     # ── Tile detection ───────────────────────────────────────────────
@@ -102,7 +104,7 @@ class TileExtractor:
             while True:
                 start_time = time.time()
                 
-                frame = cv2.imread("output_photo6.jpg")#self.oak.get_gray()
+                frame = cv2.imread(self.photo_path)#self.oak.get_gray()
                 if frame is None:
                     time.sleep(frame_time)
                     continue
@@ -131,7 +133,8 @@ class TileExtractor:
 
 
 if __name__ == "__main__":
-    extractor = TileExtractor()
+    photo_path = sys.argv[1] if len(sys.argv) > 1 else None
+    extractor = TileExtractor(photo_path=photo_path)
     extractor.extract()
     # Let Python handle cleanup naturally - explicit close() causes deadlocks
 

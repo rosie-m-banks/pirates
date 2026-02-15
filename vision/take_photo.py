@@ -2,6 +2,7 @@ from oak import Oak
 import cv2
 import numpy as np
 import time
+import sys
 
 class TakePhoto:
     def __init__(self, output_path):
@@ -14,7 +15,11 @@ class TakePhoto:
         return self.output_path
 
 def main():
-    take_photo = TakePhoto("output_photo6.jpg")
+    # Parse command-line argument for output path
+    # Usage: python3 take_photo.py [output_path]
+    output_path = sys.argv[1] if len(sys.argv) > 1 else "output_photo.jpg"
+    
+    take_photo = TakePhoto(output_path)
     time.sleep(10)
     print("Taking photo...")
     take_photo.take_photo()

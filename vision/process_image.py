@@ -4,6 +4,7 @@ import cv2
 import numpy as np
 import os
 import shutil
+import sys
 from concurrent.futures import ThreadPoolExecutor
 
 
@@ -20,8 +21,8 @@ class ImageProcessor:
     # Below this confidence, treat as unrecognised
     CONFIDENCE_THRESH = 20  # Tesseract confidence is 0-100
 
-    def __init__(self, camera_config="camera.yaml"):
-        self.extractor = TileExtractor(camera_config)
+    def __init__(self, camera_config="camera.yaml", photo_path=None):
+        self.extractor = TileExtractor(camera_config, photo_path=photo_path)
         print("ImageProcessor ready (using Tesseract OCR)")
 
     # ── Geometry ─────────────────────────────────────────────────────
@@ -114,27 +115,61 @@ class ImageProcessor:
     @staticmethod
     def _crop_tile(gray, rect, pad=6):
         """Warp a rotated rect into an upright square crop."""
+        # Validate rect dimensions
+        if rect[1][0] <= 0 or rect[1][1] <= 0:
+            # Invalid rect, return a small white image
+            return np.ones((128, 128), dtype=np.uint8) * 255
+        
         src_pts = cv2.boxPoints(rect).astype(np.float32)
+        
+        # Validate source points are within image bounds
+        h_img, w_img = gray.shape
+        if np.any(src_pts < 0) or np.any(src_pts[:, 0] >= w_img) or np.any(src_pts[:, 1] >= h_img):
+            # Points outside bounds, clip them
+            src_pts[:, 0] = np.clip(src_pts[:, 0], 0, w_img - 1)
+            src_pts[:, 1] = np.clip(src_pts[:, 1], 0, h_img - 1)
+        
         src_pts = ImageProcessor._order_points(src_pts)
 
         size = int(max(rect[1])) + pad * 2
+        if size <= 0:
+            return np.ones((128, 128), dtype=np.uint8) * 255
+        
         dst_pts = np.array(
             [[pad, pad], [size - pad, pad],
              [size - pad, size - pad], [pad, size - pad]],
             dtype=np.float32,
         )
-        M = cv2.getPerspectiveTransform(src_pts, dst_pts)
-        crop = cv2.warpPerspective(gray, M, (size, size))
+        
+        # Check if transform is valid (points not collinear)
+        try:
+            M = cv2.getPerspectiveTransform(src_pts, dst_pts)
+        except cv2.error:
+            # Invalid transform, return white image
+            return np.ones((128, 128), dtype=np.uint8) * 255
+        
+        crop = cv2.warpPerspective(gray, M, (size, size), 
+                                   flags=cv2.INTER_LINEAR,
+                                   borderMode=cv2.BORDER_CONSTANT,
+                                   borderValue=255)  # Use white border instead of black
 
         # Remove black rim unless it connects to content >20% deep
-        crop = ImageProcessor._remove_black_rim(crop, depth_threshold=0.2)
         
-        # Trim bottom 15% to avoid tile border artifacts
-        h = crop.shape[0]
-        inner = crop[0:int(h * 0.85), :]
+        # Trim 15% from all edges to avoid tile border artifacts
+        h, w = crop.shape[0], crop.shape[1]
+        margin_h = int(h * 0.15)
+        margin_w = int(w * 0.15)
+        
+        # Ensure margins don't exceed image size
+        if margin_h * 2 >= h or margin_w * 2 >= w:
+            # Margins too large, use smaller crop
+            inner = crop
+        else:
+            inner = crop[margin_h:h-margin_h, margin_w:w-margin_w]
 
-        inner = cv2.resize(inner, (80, 80), interpolation=cv2.INTER_CUBIC)
+        # inner = cv2.resize(inner, (80, 80), interpolation=cv2.INTER_CUBIC)
 
+        # crop = ImageProcessor._remove_black_rim(inner, depth_threshold=0.005)
         # White buffer so letter is never clipped
         inner = cv2.copyMakeBorder(
             inner, 24, 24, 24, 24, cv2.BORDER_CONSTANT, value=255
@@ -263,7 +298,13 @@ class ImageProcessor:
         blank = ImageProcessor._is_blank(crop)
 
         crop_path = os.path.join(crop_dir, f"tile_{idx:03d}.png")
-        cv2.imwrite(crop_path, crop)
+        # Ensure grayscale (2D array) is saved correctly
+        if len(crop.shape) == 2:
+            cv2.imwrite(crop_path, crop)
+        else:
+            # If somehow color, convert to grayscale first
+            gray_crop = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY) if len(crop.shape) == 3 else crop
+            cv2.imwrite(crop_path, gray_crop)
 
         # Save binarised variants for reference
         # Find bimodal threshold: detect two peaks in histogram and split at the valley
@@ -303,7 +344,7 @@ class ImageProcessor:
 
     # ── Public API ───────────────────────────────────────────────────
 
-    def process(self, output_path="output_boxes.jpg", crop_dir="crops-07"):
+    def process(self, output_path="output_boxes.jpg", crop_dir="crops-05"):
         # Prepare crop directory
         if os.path.exists(crop_dir):
             shutil.rmtree(crop_dir)
@@ -370,5 +411,10 @@ class ImageProcessor:
 
 
 if __name__ == "__main__":
-    processor = ImageProcessor()
-    processor.process()
+    # Parse command-line arguments
+    # Usage: python3 process_image.py [crop_dir] [photo_path]
+    crop_dir = sys.argv[1] if len(sys.argv) > 1 else "crops-05"
+    photo_path = sys.argv[2] if len(sys.argv) > 2 else None
+    
+    processor = ImageProcessor(photo_path=photo_path)
+    processor.process(crop_dir=crop_dir)
