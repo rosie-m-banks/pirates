@@ -9,10 +9,11 @@ import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { processGameState, letterCounts, normalizeGameData } from './gameState.js';
+import { sortRecommendations, ScoringConfig } from './recommendationScorer.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-/** @type {{ words: string[], counts: Record<string, number>[], wordsByFirstAndLength: Object, maxWordLength: number }} */
+/** @type {{ words: string[], counts: Record<string, number>[], wordsByFirstAndLength: Object, maxWordLength: number, frequencies: Record<string, number> }} */
 let dictionaryCache = null;
 
 /** Build index: wordsByFirstAndLength[firstLetter][length] = array of dict indices. */
@@ -48,7 +49,19 @@ function loadDictionary() {
   }
   const counts = words.map((w) => letterCounts(w));
   const { wordsByFirstAndLength, maxWordLength } = buildWordsByFirstAndLength(words);
-  dictionaryCache = { words, counts, wordsByFirstAndLength, maxWordLength };
+
+  // Load word frequencies (zipf scores 0-8, higher = more common)
+  let frequencies = {};
+  try {
+    const freqPath = join(__dirname, 'data', 'word_frequencies.json');
+    const freqText = readFileSync(freqPath, 'utf8');
+    frequencies = JSON.parse(freqText);
+  } catch {
+    // Fallback: no frequency sorting if file missing
+    console.warn('word_frequencies.json not found, recommendations will not be sorted by frequency');
+  }
+
+  dictionaryCache = { words, counts, wordsByFirstAndLength, maxWordLength, frequencies };
   return dictionaryCache;
 }
 
@@ -107,8 +120,17 @@ parentPort.on('message', (msg) => {
     let result;
     if (kind === 'game-state') {
       const resolved = applyPayload(payload);
-      const { words, counts, wordsByFirstAndLength, maxWordLength } = loadDictionary();
+      const { words, counts, wordsByFirstAndLength, maxWordLength, frequencies } = loadDictionary();
       result = processGameState(resolved, words, counts, { wordsByFirstAndLength, maxWordLength }, subsetCache);
+
+      // Sort and filter recommended_words using modular scoring system
+      if (result.recommended_words && Object.keys(frequencies).length > 0) {
+        result.recommended_words = sortRecommendations(
+          result.recommended_words,
+          frequencies,
+          ScoringConfig
+        );
+      }
     } else if (kind === 'image') {
       result = processImageUpdate(payload);
     } else {
