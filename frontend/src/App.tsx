@@ -155,6 +155,11 @@ function App() {
                             Pirates
                         </span>
                     </h1>
+                    <div className="mb-4 text-xl p-3 px-4 bg-(--wave-color) rounded-2xl text-white shadow-[3px_5px_0_rgba(0,0,0,0.6)]">
+                        {viewMode == "student" && "Play"}
+                        {viewMode == "teacher" && "Teach"}
+                        {viewMode == "validation" && "Learn"}
+                    </div>
                 </header>
 
                 {gameData && viewMode === "student" && (
