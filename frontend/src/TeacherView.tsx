@@ -55,9 +55,9 @@ export default function TeacherView({ gameData }: TeacherViewProps) {
 
     return (
         <div className="w-full max-w-7xl mx-auto px-4 flex flex-col gap-4">
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="flex flex-col lg:flex-row gap-6">
                 {imageUrl && (
-                    <div className="flex flex-col justify-center">
+                    <div className="flex flex-col justify-center grow-3">
                         <img
                             src={imageUrl}
                             alt="Game board"

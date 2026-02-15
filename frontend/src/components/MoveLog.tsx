@@ -12,7 +12,7 @@ interface MoveLogProps {
  */
 export default function MoveLog({ entries, isLoading, error }: MoveLogProps) {
     return (
-        <div>
+        <div className="shrink relative">
             <div className="space-y-2 max-h-[600px] overflow-y-auto no-scrollbar">
                 {isLoading && (
                     <div className="text-center text-gray-500 py-8">
@@ -42,6 +42,13 @@ export default function MoveLog({ entries, isLoading, error }: MoveLogProps) {
                         />
                     ))}
             </div>
+            <div
+                className="absolute bottom-0 left-0 right-0 h-16 pointer-events-none"
+                style={{
+                    background:
+                        "linear-gradient(to bottom, transparent, var(--ocean-blue))",
+                }}
+            />
         </div>
     );
 }

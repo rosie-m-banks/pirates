@@ -30,7 +30,7 @@ export default function MoveLogEntry({
 
     return (
         <div
-            className="flex items-center gap-3 p-3 rounded-lg border-l-4 border-2 transition-colors"
+            className="flex items-center justify-between gap-3 p-3 rounded-lg border-l-4 border-2 transition-colors"
             style={{
                 backgroundColor: colorScheme.bg + "22",
                 borderLeftColor: colorScheme.border,
@@ -38,22 +38,21 @@ export default function MoveLogEntry({
                 borderLeftWidth: "6px",
             }}
         >
+            <span className="flex gap-3">
+                <span
+                    className="font-bold"
+                    style={{ color: colorScheme.border }}
+                >
+                    {studentName}
+                </span>
+                <span style={{ color: "var(--ocean-dark)" }}>played</span>
+                <span className="font-bold text-black">"{word}"</span>
+            </span>
             <span
                 className="text-sm font-semibold min-w-[60px]"
                 style={{ color: "var(--wave-color)" }}
             >
                 {formattedTime}
-            </span>
-            <span
-                className="font-bold min-w-[80px]"
-                style={{ color: colorScheme.border }}
-            >
-                {studentName}
-            </span>
-            <span style={{ color: "var(--ocean-dark)" }}>played</span>
-            <span className="font-bold text-lg text-black">"{word}"</span>
-            <span className="ml-auto px-3 py-1 text-sm font-bold text-white/70">
-                {frequencyScore.toFixed(1)}
             </span>
         </div>
     );
