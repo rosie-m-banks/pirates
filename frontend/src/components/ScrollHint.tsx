@@ -7,12 +7,17 @@ export default function ScrollHint({ hints, width = 600 }: ScrollHintProps) {
     const rollWidth = 40;
 
     // Estimate height based on text length and width
-    // Approximate: ~14px per character at text-sm, ~40-50 chars per line at 600px width
-    // const charsPerLine = Math.floor((width - 80) / 10); // Account for padding
-    const estimatedLines = hints.length;
-    const lineHeight = 30; // leading-relaxed with text-sm
+    // Silkscreen at text-sm (~14px) is ~10px per char; px-12 = 96px horizontal padding
+    const charsPerLine = Math.floor((width - 96) / 10);
+    const estimatedLines = hints.reduce(
+        (total, hint) =>
+            total + Math.max(1, Math.ceil(hint.length / charsPerLine)),
+        0,
+    );
+    const lineHeight = 24; // leading-relaxed with text-sm
+    const gapHeight = (hints.length - 1) * 8; // gap-2 between hints
     const verticalPadding = 60; // Top and bottom padding combined
-    const height = estimatedLines * lineHeight + verticalPadding;
+    const height = estimatedLines * lineHeight + gapHeight + verticalPadding;
 
     return (
         <div className="relative inline-block w-full">
@@ -62,13 +67,13 @@ export default function ScrollHint({ hints, width = 600 }: ScrollHintProps) {
                 />
 
                 <path
-                    d={`M ${rollWidth + 10} 30 L ${rollWidth + 10} ${height - 30}`}
+                    d={`M ${10} 30 L ${10} ${height - 30}`}
                     stroke="var(--scroll-dark)"
                     strokeWidth="1"
                     opacity="0.3"
                 />
                 <path
-                    d={`M ${width + rollWidth - 10} 30 L ${width + rollWidth - 10} ${height - 30}`}
+                    d={`M ${width - 10} 30 L ${width - 10} ${height - 30}`}
                     stroke="var(--scroll-dark)"
                     strokeWidth="1"
                     opacity="0.3"
