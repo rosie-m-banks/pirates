@@ -1,4 +1,4 @@
-"""Detect Bananagram tiles and read letters. Prefers letter model (TrOCR), then LeNet, LetterCNN, then templates."""
+"""Detect Bananagram tiles and read letters. Prefers trained LetterCNN (train_letter_model), then TrOCR, LeNet, then templates."""
 
 from extract_tiles import TileExtractor
 import cv2
@@ -43,7 +43,14 @@ class ImageProcessor:
         self.extractor = TileExtractor(camera_config)
         self.recognizer = None
         if use_cnn:
-            if _LETTER_MODEL_AVAILABLE:
+            # Prefer your trained model from train_letter_model.py (LetterCNN)
+            if _LETTER_CNN_AVAILABLE and LETTER_CNN_PATH and os.path.isfile(LETTER_CNN_PATH):
+                try:
+                    self.recognizer = LetterCNNRecognizer()
+                    print("ImageProcessor ready (LetterCNN from train_letter_model)")
+                except Exception as e:
+                    print(f"LetterCNN load failed: {e}")
+            if self.recognizer is None and _LETTER_MODEL_AVAILABLE:
                 try:
                     self.recognizer = TrOCRLetterRecognizer()
                     print("ImageProcessor ready (letter model / TrOCR)")
@@ -55,12 +62,6 @@ class ImageProcessor:
                     print("ImageProcessor ready (LeNet)")
                 except Exception as e:
                     print(f"LeNet load failed: {e}")
-            if self.recognizer is None and _LETTER_CNN_AVAILABLE and LETTER_CNN_PATH and os.path.isfile(LETTER_CNN_PATH):
-                try:
-                    self.recognizer = LetterCNNRecognizer()
-                    print("ImageProcessor ready (LetterCNN)")
-                except Exception as e:
-                    print(f"LetterCNN load failed: {e}")
         if self.recognizer is None:
             self.recognizer = TemplateRecognizer()
             if not self.recognizer.available:
@@ -141,14 +142,28 @@ class ImageProcessor:
                             cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
         return output
 
-    def process(self, output_path="output_boxes.jpg", crop_dir="crops"):
+    def process(self, output_path="output_boxes.jpg", crop_dir="crops", image_path=None):
         if os.path.exists(crop_dir):
             shutil.rmtree(crop_dir)
         os.makedirs(crop_dir)
 
-        frame = self.extractor.oak.get_gray()
-        if frame is None:
-            raise RuntimeError("Could not get a frame from the Oak camera")
+        if image_path is not None:
+            frame = cv2.imread(image_path)
+            if frame is None:
+                # try with common extensions if path has none
+                for ext in (".jpg", ".jpeg", ".png", ".bmp"):
+                    p = image_path + ext if not image_path.lower().endswith(ext) else image_path
+                    if p == image_path:
+                        continue
+                    frame = cv2.imread(p)
+                    if frame is not None:
+                        break
+            if frame is None:
+                raise FileNotFoundError(f"Could not load image: {image_path}")
+        else:
+            frame = self.extractor.oak.get_gray()
+            if frame is None:
+                raise RuntimeError("Could not get a frame from the Oak camera")
         gray = frame if len(frame.shape) == 2 else cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         tiles = self.extractor._detect_tiles(gray)
         print(f"Found {len(tiles)} tiles, preprocessing...")
@@ -198,5 +213,7 @@ class ImageProcessor:
 
 
 if __name__ == "__main__":
+    import sys
     processor = ImageProcessor()
-    processor.process()
+    image_path = sys.argv[1] if len(sys.argv) > 1 else None
+    processor.process(image_path=image_path)
