@@ -467,6 +467,56 @@ class TileExtractorGUI:
         if file_path:
             self.load_image(file_path)
     
+    def _validate_no_hands_multiple_frames(self, initial_frame, frame_delay=0.25, num_validation_frames=3):
+        """
+        Validate that no hands are detected across multiple frames.
+        
+        Args:
+            initial_frame: The initial frame that had no hands detected
+            frame_delay: Delay between frames in seconds (default: 0.25)
+            num_validation_frames: Number of additional frames to check (default: 3)
+        
+        Returns:
+            tuple: (validated_frame, all_clear) where validated_frame is the final frame
+                   and all_clear is True if no hands detected in any validation frame
+        """
+        if self.hand_detector is None:
+            # No hand detector available, skip validation
+            return initial_frame, True
+        
+        # Check initial frame again (sanity check)
+        if self.hand_detector.detect_hands(initial_frame):
+            print("[VALIDATION] Initial frame now has hands, validation failed")
+            return initial_frame, False
+        
+        # Validate across multiple frames
+        validated_frame = initial_frame
+        for i in range(num_validation_frames):
+            print(f"[VALIDATION] Waiting {frame_delay}s before validation frame {i+1}/{num_validation_frames}...")
+            time.sleep(frame_delay)
+            
+            # Capture new frame
+            validation_frame = self.oak.get_rgb()
+            if validation_frame is None:
+                print(f"[VALIDATION] ERROR: Failed to capture validation frame {i+1}")
+                logger.warning(f"Failed to capture validation frame {i+1}, using previous frame")
+                continue
+            
+            # Check for hands
+            has_hands = self.hand_detector.detect_hands(validation_frame)
+            if has_hands:
+                print(f"[VALIDATION] *** HAND DETECTED in validation frame {i+1}! Validation failed ***")
+                logger.info(f"Hand detected in validation frame {i+1}, validation failed")
+                return validation_frame, False
+            
+            # Update validated frame to the latest one
+            validated_frame = validation_frame
+            print(f"[VALIDATION] Validation frame {i+1}/{num_validation_frames} passed (no hands)")
+        
+        print(f"[VALIDATION] All {num_validation_frames} validation frames passed (no hands detected)")
+        logger.info(f"All {num_validation_frames} validation frames passed (no hands detected)")
+        return validated_frame, True
+    
     def _capture_from_camera(self):
         """Capture a frame from the Oak camera, checking for hands and retrying if needed."""
         if self.oak is None:
@@ -497,11 +547,35 @@ class TileExtractorGUI:
                     print(f"[CAPTURE] Hand detection result: {has_hands}")
                     
                     if not has_hands:
-                        print("[CAPTURE] No hand detected, proceeding with capture")
-                        logger.info("No hand detected, proceeding with capture")
-                        self.status_label.config(text="No hand detected, proceeding with capture...")
+                        print("[CAPTURE] No hand detected, validating with multiple frames...")
+                        logger.info("No hand detected, validating with multiple frames...")
+                        self.status_label.config(text="No hand detected, validating with multiple frames...")
                         self.root.update()
-                        break
+                        
+                        # Validate with multiple frames
+                        validated_frame, all_clear = self._validate_no_hands_multiple_frames(rgb_frame)
+                        rgb_frame = validated_frame
+                        
+                        if all_clear:
+                            print("[CAPTURE] Validation passed, proceeding with capture")
+                            logger.info("Validation passed, proceeding with capture")
+                            self.status_label.config(text="Validation passed, proceeding with capture...")
+                            self.root.update()
+                            break
+                        else:
+                            print("[CAPTURE] Validation failed (hands detected in validation frames), retrying...")
+                            logger.info("Validation failed (hands detected in validation frames), retrying...")
+                            self.status_label.config(text="Validation failed, retrying...")
+                            self.root.update()
+                            retry_count += 1
+                            time.sleep(1.0)
+                            rgb_frame = self.oak.get_rgb()
+                            if rgb_frame is None:
+                                print("[CAPTURE] ERROR: Failed to recapture frame")
+                                messagebox.showerror("Capture Error", "Failed to recapture frame from camera.")
+                                self.status_label.config(text="Camera recapture failed.")
+                                return
+                            continue
                     
                     # Hand detected, wait and recapture
                     retry_count += 1
@@ -891,10 +965,32 @@ class TileExtractorGUI:
                     print(f"[AUTO-CAPTURE] Hand detection result: {has_hands}")
                     
                     if not has_hands:
-                        print("[AUTO-CAPTURE] No hand detected, proceeding with capture")
-                        logger.info("Auto-capture: No hand detected, proceeding with capture")
-                        self.root.after(0, lambda: self.status_label.config(text="Auto-capture: No hand detected, proceeding..."))
-                        break
+                        print("[AUTO-CAPTURE] No hand detected, validating with multiple frames...")
+                        logger.info("Auto-capture: No hand detected, validating with multiple frames...")
+                        self.root.after(0, lambda: self.status_label.config(text="Auto-capture: No hand detected, validating with multiple frames..."))
+                        
+                        # Validate with multiple frames
+                        validated_frame, all_clear = self._validate_no_hands_multiple_frames(rgb_frame)
+                        rgb_frame = validated_frame
+                        
+                        if all_clear:
+                            print("[AUTO-CAPTURE] Validation passed, proceeding with capture")
+                            logger.info("Auto-capture: Validation passed, proceeding with capture")
+                            self.root.after(0, lambda: self.status_label.config(text="Auto-capture: Validation passed, proceeding..."))
+                            break
+                        else:
+                            print("[AUTO-CAPTURE] Validation failed (hands detected in validation frames), retrying...")
+                            logger.info("Auto-capture: Validation failed (hands detected in validation frames), retrying...")
+                            self.root.after(0, lambda: self.status_label.config(text="Auto-capture: Validation failed, retrying..."))
+                            retry_count += 1
+                            time.sleep(1.0)
+                            rgb_frame = self.oak.get_rgb()
+                            if rgb_frame is None:
+                                print("[AUTO-CAPTURE] ERROR: Failed to recapture frame")
+                                logger.warning("Auto-capture: Failed to recapture frame")
+                                self.root.after(0, lambda: self.status_label.config(text="Auto-capture: Failed to recapture frame"))
+                                return
+                            continue
                     
                     # Hand detected, wait and recapture
                     retry_count += 1
