@@ -33,8 +33,10 @@ def config_rgb_image(pipeline, key, cam_cfg):
     cam_rgb.setFps(fps)
     cam_rgb.setInterleaved(False)
     cam_rgb.setColorOrder(dai.ColorCameraProperties.ColorOrder.BGR)
-
-    video_queue = cam_rgb.video.createOutputQueue()
+    
+    # Set queue size to 1 to prevent frame accumulation and ensure we always get the latest frame
+    # This helps prevent getting stale/cropped frames when captures happen at different times
+    video_queue = cam_rgb.video.createOutputQueue(maxSize=1, blocking=False)
     return video_queue
 
 class Oak(GenericCamera):
@@ -120,7 +122,30 @@ class Oak(GenericCamera):
                     self.gray = gray_frame
 
     def get_gray(self):
-        self.publish_frames()
+        """Get the latest grayscale frame from the camera.
+        
+        Drains old frames from the queue to ensure we always get the most recent frame.
+        This prevents getting stale/cropped frames when captures happen at different times.
+        """
+        # Drain all old frames from the queue to get the latest one
+        latest_frame = None
+        for key in self.devices.keys():
+            queue = self.queues[key]["rgb"]
+            # Keep getting frames until queue is empty (drain old frames)
+            while True:
+                rgb_frame = queue.tryGet()
+                if rgb_frame is None:
+                    break
+                latest_frame = rgb_frame
+        
+        # Process the latest frame if we got one
+        if latest_frame is not None:
+            frame = latest_frame.getCvFrame()
+            gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            with self._gray_lock:
+                self.gray = gray_frame
+        
+        # Return the latest frame (or cached one if no new frame available)
         with self._gray_lock:
             if self.gray is not None:
                 return self.gray.copy()
